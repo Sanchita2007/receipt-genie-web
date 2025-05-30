@@ -71,7 +71,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           for (let i = 1; i < lines.length; i++) {
             if (lines[i].trim()) {
               const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-              const student: StudentData = {};
+              const student: Partial<StudentData> = {};
               
               headers.forEach((header, index) => {
                 const value = values[index] || '';
@@ -91,7 +91,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               });
               
               if (student.name && student.email && student.rollNumber) {
-                students.push(student);
+                students.push(student as StudentData);
               }
             }
           }
