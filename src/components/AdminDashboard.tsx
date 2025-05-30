@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -111,7 +110,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     
     if (files.dataSheet) {
       try {
-        // Convert .xlsx to CSV-like format for parsing
         const students = await parseExcelFile(files.dataSheet);
         setStudentData(students);
         toast({
@@ -155,7 +153,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     setIsGenerating(true);
     setGenerationProgress(0);
 
-    // Generate receipts from real data
     const newReceipts: Receipt[] = studentData.map((student, index) => ({
       id: Date.now() + index,
       studentName: student.name,
@@ -168,7 +165,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       semester: student.semester
     }));
 
-    // Simulate progress
     const totalSteps = studentData.length;
     let currentStep = 0;
     
@@ -205,7 +201,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       description: `Starting email distribution for ${pendingReceipts.length} receipts.`,
     });
     
-    // Update receipt status
     setReceipts(prev => prev.map(receipt => ({ ...receipt, sentStatus: true })));
     
     setTimeout(() => {
@@ -337,7 +332,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           </TabsList>
 
           <TabsContent value="upload" className="space-y-6">
-            {/* File Upload Section */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -363,7 +357,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   />
                 </div>
 
-                {/* Generation Section */}
                 {(uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0) && (
                   <div className="bg-blue-50 p-6 rounded-lg">
                     <h3 className="font-semibold text-blue-900 mb-4">Ready to Generate</h3>
@@ -428,7 +421,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               </CardContent>
             </Card>
           </TabsContent>
-        </tabs>
+        </Tabs>
       </main>
     </div>
   );
