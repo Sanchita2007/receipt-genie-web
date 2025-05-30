@@ -64,39 +64,63 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       reader.onload = (e) => {
         try {
           const data = e.target?.result as string;
-          const lines = data.split('\n');
-          const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+          console.log('File content preview:', data.substring(0, 200));
+          
+          // Handle both CSV and potentially TSV formats
+          const lines = data.split('\n').filter(line => line.trim());
+          if (lines.length < 2) {
+            console.log('Not enough lines in file');
+            resolve([]);
+            return;
+          }
+          
+          // Try comma first, then semicolon, then tab
+          let delimiter = ',';
+          if (lines[0].includes(';') && !lines[0].includes(',')) {
+            delimiter = ';';
+          } else if (lines[0].includes('\t')) {
+            delimiter = '\t';
+          }
+          
+          console.log('Using delimiter:', delimiter);
+          const headers = lines[0].split(delimiter).map(h => h.trim().replace(/['"]/g, ''));
+          console.log('Headers found:', headers);
           
           const students: StudentData[] = [];
           for (let i = 1; i < lines.length; i++) {
             if (lines[i].trim()) {
-              const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+              const values = lines[i].split(delimiter).map(v => v.trim().replace(/['"]/g, ''));
               const student: Partial<StudentData> = {};
               
               headers.forEach((header, index) => {
                 const value = values[index] || '';
-                if (header.toLowerCase().includes('name')) {
+                const lowerHeader = header.toLowerCase();
+                
+                if (lowerHeader.includes('name') || lowerHeader.includes('student')) {
                   student.name = value;
-                } else if (header.toLowerCase().includes('email')) {
+                } else if (lowerHeader.includes('email') || lowerHeader.includes('mail')) {
                   student.email = value;
-                } else if (header.toLowerCase().includes('roll') || header.toLowerCase().includes('id')) {
+                } else if (lowerHeader.includes('roll') || lowerHeader.includes('id') || lowerHeader.includes('number')) {
                   student.rollNumber = value;
-                } else if (header.toLowerCase().includes('amount') || header.toLowerCase().includes('fee')) {
+                } else if (lowerHeader.includes('amount') || lowerHeader.includes('fee') || lowerHeader.includes('cost')) {
                   student.amount = parseFloat(value) || 0;
-                } else if (header.toLowerCase().includes('semester')) {
+                } else if (lowerHeader.includes('semester') || lowerHeader.includes('sem')) {
                   student.semester = value;
                 } else {
                   student[header] = value;
                 }
               });
               
+              console.log('Parsed student:', student);
               if (student.name && student.email && student.rollNumber) {
                 students.push(student as StudentData);
               }
             }
           }
+          console.log('Total valid students:', students.length);
           resolve(students);
         } catch (error) {
+          console.error('Parse error:', error);
           reject(error);
         }
       };
@@ -394,10 +418,20 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   </div>
                 </div>
 
-                {/* Generation Section */}
-                {uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0 && (
+                {/* Generate Button - Show when both files are uploaded */}
+                {uploadedFiles.template && uploadedFiles.dataSheet && (
                   <div className="bg-blue-50 p-6 rounded-lg">
-                    <h3 className="font-semibold text-blue-900 mb-4">Ready to Generate</h3>
+                    <h3 className="font-semibold text-blue-900 mb-4">
+                      {studentData.length > 0 ? 'Ready to Generate' : 'Files Uploaded - Generate Receipts'}
+                    </h3>
+                    
+                    {studentData.length > 0 && (
+                      <div className="mb-4 p-3 bg-green-100 rounded-lg">
+                        <p className="text-green-800 text-sm">
+                          ✅ Found {studentData.length} student records in your data file
+                        </p>
+                      </div>
+                    )}
                     
                     {isGenerating && (
                       <div className="mb-4">
@@ -416,7 +450,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         <FileText className="h-4 w-4 mr-2" />
-                        Generate {studentData.length} Receipts
+                        {studentData.length > 0 
+                          ? `Generate ${studentData.length} Receipts` 
+                          : 'Generate Receipts'
+                        }
                       </Button>
 
                       {generationProgress === 100 && receipts.length > 0 && (
@@ -435,6 +472,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     <h4 className="font-semibold text-yellow-800 mb-2">No Student Data Found</h4>
                     <p className="text-sm text-yellow-700">
                       Please ensure your data file contains columns with headers that include 'name', 'email', and 'roll' or 'id'.
+                      The system will try to parse the file anyway when you click Generate.
                     </p>
                   </div>
                 )}
