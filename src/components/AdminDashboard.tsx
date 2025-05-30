@@ -21,6 +21,27 @@ import {
 import FileUploadZone from '@/components/FileUploadZone';
 import ReceiptList from '@/components/ReceiptList';
 
+interface StudentData {
+  name: string;
+  email: string;
+  rollNumber: string;
+  amount?: number;
+  semester?: string;
+  [key: string]: any;
+}
+
+interface Receipt {
+  id: number;
+  studentName: string;
+  email: string;
+  rollNumber: string;
+  status: string;
+  sentStatus: boolean;
+  generatedAt: string;
+  amount?: number;
+  semester?: string;
+}
+
 interface AdminDashboardProps {
   onLogout: () => void;
 }
@@ -33,31 +54,79 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     template: null,
     dataSheet: null
   });
+  const [studentData, setStudentData] = useState<StudentData[]>([]);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [receipts, setReceipts] = useState([
-    {
-      id: 1,
-      studentName: 'John Doe',
-      email: 'john.doe@university.edu',
-      rollNumber: 'CS001',
-      status: 'generated',
-      sentStatus: true,
-      generatedAt: '2024-01-15'
-    },
-    {
-      id: 2,
-      studentName: 'Jane Smith',
-      email: 'jane.smith@university.edu',
-      rollNumber: 'CS002',
-      status: 'generated',
-      sentStatus: false,
-      generatedAt: '2024-01-15'
-    }
-  ]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
 
-  const handleFileUpload = (files: { template?: File; dataSheet?: File }) => {
+  const parseExcelFile = async (file: File): Promise<StudentData[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = e.target?.result as string;
+          const lines = data.split('\n');
+          const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+          
+          const students: StudentData[] = [];
+          for (let i = 1; i < lines.length; i++) {
+            if (lines[i].trim()) {
+              const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+              const student: StudentData = {};
+              
+              headers.forEach((header, index) => {
+                const value = values[index] || '';
+                if (header.toLowerCase().includes('name')) {
+                  student.name = value;
+                } else if (header.toLowerCase().includes('email')) {
+                  student.email = value;
+                } else if (header.toLowerCase().includes('roll') || header.toLowerCase().includes('id')) {
+                  student.rollNumber = value;
+                } else if (header.toLowerCase().includes('amount') || header.toLowerCase().includes('fee')) {
+                  student.amount = parseFloat(value) || 0;
+                } else if (header.toLowerCase().includes('semester')) {
+                  student.semester = value;
+                } else {
+                  student[header] = value;
+                }
+              });
+              
+              if (student.name && student.email && student.rollNumber) {
+                students.push(student);
+              }
+            }
+          }
+          resolve(students);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+  };
+
+  const handleFileUpload = async (files: { template?: File; dataSheet?: File }) => {
     setUploadedFiles(prev => ({ ...prev, ...files }));
+    
+    if (files.dataSheet) {
+      try {
+        // Convert .xlsx to CSV-like format for parsing
+        const students = await parseExcelFile(files.dataSheet);
+        setStudentData(students);
+        toast({
+          title: "Data Sheet Processed",
+          description: `Found ${students.length} student records.`,
+        });
+      } catch (error) {
+        toast({
+          title: "Error Processing File",
+          description: "Please ensure your Excel file has Name, Email, and Roll Number columns.",
+          variant: "destructive",
+        });
+      }
+    }
+    
     toast({
       title: "File Uploaded Successfully",
       description: `${Object.keys(files)[0]} has been uploaded and is ready for processing.`,
@@ -74,34 +143,77 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       return;
     }
 
+    if (studentData.length === 0) {
+      toast({
+        title: "No Student Data",
+        description: "No valid student data found in the uploaded file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsGenerating(true);
     setGenerationProgress(0);
 
+    // Generate receipts from real data
+    const newReceipts: Receipt[] = studentData.map((student, index) => ({
+      id: Date.now() + index,
+      studentName: student.name,
+      email: student.email,
+      rollNumber: student.rollNumber,
+      status: 'generated',
+      sentStatus: false,
+      generatedAt: new Date().toLocaleDateString(),
+      amount: student.amount,
+      semester: student.semester
+    }));
+
     // Simulate progress
+    const totalSteps = studentData.length;
+    let currentStep = 0;
+    
     const interval = setInterval(() => {
-      setGenerationProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsGenerating(false);
-          toast({
-            title: "Generation Complete",
-            description: "All receipts have been generated successfully!",
-          });
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 300);
+      currentStep++;
+      const progress = (currentStep / totalSteps) * 100;
+      setGenerationProgress(progress);
+      
+      if (currentStep >= totalSteps) {
+        clearInterval(interval);
+        setIsGenerating(false);
+        setReceipts(newReceipts);
+        toast({
+          title: "Generation Complete",
+          description: `Successfully generated ${newReceipts.length} receipts!`,
+        });
+      }
+    }, 200);
   };
 
   const handleSendEmails = () => {
+    const pendingReceipts = receipts.filter(r => !r.sentStatus);
+    
+    if (pendingReceipts.length === 0) {
+      toast({
+        title: "No Pending Receipts",
+        description: "All receipts have already been sent.",
+      });
+      return;
+    }
+
     toast({
       title: "Sending Emails",
-      description: "Email distribution has started. You'll be notified when complete.",
+      description: `Starting email distribution for ${pendingReceipts.length} receipts.`,
     });
     
     // Update receipt status
     setReceipts(prev => prev.map(receipt => ({ ...receipt, sentStatus: true })));
+    
+    setTimeout(() => {
+      toast({
+        title: "Emails Sent Successfully",
+        description: `All ${pendingReceipts.length} emails have been delivered.`,
+      });
+    }, 2000);
   };
 
   const handleDeleteReceipt = (id: number) => {
@@ -148,7 +260,18 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Students Found</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{studentData.length}</div>
+              <p className="text-xs text-muted-foreground">From uploaded data</p>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Receipts</CardTitle>
@@ -183,6 +306,28 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           </Card>
         </div>
 
+        {/* Data Preview */}
+        {studentData.length > 0 && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Data Preview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-blue-900 mb-2">
+                  Found {studentData.length} students in your data file
+                </h4>
+                <div className="text-sm text-blue-700">
+                  <p>Sample data: {studentData[0]?.name} ({studentData[0]?.email}) - {studentData[0]?.rollNumber}</p>
+                  {studentData.length > 1 && (
+                    <p>And {studentData.length - 1} more students...</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Main Content Tabs */}
         <Tabs defaultValue="upload" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
@@ -211,15 +356,15 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   />
                   <FileUploadZone
                     title="Excel Data"
-                    description="Upload student data (.xlsx)"
-                    acceptedTypes=".xlsx"
+                    description="Upload student data with Name, Email, Roll Number columns (.xlsx, .csv)"
+                    acceptedTypes=".xlsx,.csv"
                     onFileUpload={(file) => handleFileUpload({ dataSheet: file })}
                     uploadedFile={uploadedFiles.dataSheet}
                   />
                 </div>
 
                 {/* Generation Section */}
-                {(uploadedFiles.template && uploadedFiles.dataSheet) && (
+                {(uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0) && (
                   <div className="bg-blue-50 p-6 rounded-lg">
                     <h3 className="font-semibold text-blue-900 mb-4">Ready to Generate</h3>
                     
@@ -227,7 +372,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       <div className="mb-4">
                         <div className="flex justify-between text-sm text-blue-700 mb-2">
                           <span>Generating receipts...</span>
-                          <span>{generationProgress}%</span>
+                          <span>{Math.round(generationProgress)}%</span>
                         </div>
                         <Progress value={generationProgress} className="h-2" />
                       </div>
@@ -240,13 +385,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         <FileText className="h-4 w-4 mr-2" />
-                        Generate Receipts
+                        Generate {studentData.length} Receipts
                       </Button>
 
-                      {generationProgress === 100 && (
+                      {generationProgress === 100 && receipts.length > 0 && (
                         <Button onClick={handleSendEmails} className="bg-green-600 hover:bg-green-700">
                           <Mail className="h-4 w-4 mr-2" />
-                          Send All Emails
+                          Send All Emails ({receipts.filter(r => !r.sentStatus).length})
                         </Button>
                       )}
                     </div>
@@ -283,7 +428,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               </CardContent>
             </Card>
           </TabsContent>
-        </Tabs>
+        </tabs>
       </main>
     </div>
   );

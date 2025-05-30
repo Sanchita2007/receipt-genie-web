@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,33 +18,96 @@ import {
   DollarSign
 } from 'lucide-react';
 
-interface StudentPortalProps {
-  onLogout: () => void;
+interface StudentData {
+  name: string;
+  email: string;
+  rollNumber: string;
+  receipt?: {
+    id: number;
+    status: 'available' | 'generating' | 'not_available';
+    generatedAt?: string;
+    amount?: number;
+    semester?: string;
+    isDeleted: boolean;
+  };
 }
 
-const StudentPortal = ({ onLogout }: StudentPortalProps) => {
-  const [student] = useState({
-    name: 'John Doe',
-    email: 'john.doe@university.edu',
-    rollNumber: 'CS001',
+interface StudentPortalProps {
+  onLogout: () => void;
+  studentEmail?: string;
+}
+
+const StudentPortal = ({ onLogout, studentEmail = 'student@university.edu' }: StudentPortalProps) => {
+  const [student, setStudent] = useState<StudentData>({
+    name: 'Student User',
+    email: studentEmail,
+    rollNumber: 'STU001',
     receipt: {
       id: 1,
-      status: 'available', // available, generating, not_available
-      generatedAt: '2024-01-15',
-      amount: 5000,
-      semester: 'Spring 2024',
+      status: 'not_available',
       isDeleted: false
     }
   });
 
+  // Simulate fetching student data based on logged-in email
+  useEffect(() => {
+    // In a real app, this would fetch from your backend/database
+    const fetchStudentData = () => {
+      // Check if there are any receipts generated for this student
+      const savedReceipts = localStorage.getItem('generatedReceipts');
+      if (savedReceipts) {
+        try {
+          const receipts = JSON.parse(savedReceipts);
+          const studentReceipt = receipts.find((r: any) => 
+            r.email.toLowerCase() === studentEmail.toLowerCase()
+          );
+          
+          if (studentReceipt) {
+            setStudent({
+              name: studentReceipt.studentName,
+              email: studentReceipt.email,
+              rollNumber: studentReceipt.rollNumber,
+              receipt: {
+                id: studentReceipt.id,
+                status: 'available',
+                generatedAt: studentReceipt.generatedAt,
+                amount: studentReceipt.amount || 5000,
+                semester: studentReceipt.semester || 'Current Semester',
+                isDeleted: false
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Error parsing receipts:', error);
+        }
+      }
+    };
+
+    fetchStudentData();
+    
+    // Listen for storage changes (when admin generates new receipts)
+    const handleStorageChange = () => {
+      fetchStudentData();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [studentEmail]);
+
   const handleDownloadReceipt = () => {
-    if (student.receipt.status === 'available' && !student.receipt.isDeleted) {
+    if (student.receipt?.status === 'available' && !student.receipt.isDeleted) {
       toast({
         title: "Download Started",
         description: "Your fee receipt is being downloaded.",
       });
-      // Simulate download
+      
+      // Simulate PDF download
       setTimeout(() => {
+        // Create a mock PDF download
+        const link = document.createElement('a');
+        link.href = '#'; // In real app, this would be the actual PDF URL
+        link.download = `receipt_${student.rollNumber}_${new Date().getTime()}.pdf`;
+        
         toast({
           title: "Download Complete",
           description: "Receipt saved to your downloads folder.",
@@ -53,33 +116,40 @@ const StudentPortal = ({ onLogout }: StudentPortalProps) => {
     }
   };
 
+  const handleRequestEmail = () => {
+    toast({
+      title: "Email Requested",
+      description: "A copy of your receipt will be sent to your email address.",
+    });
+  };
+
   const getStatusBadge = () => {
-    const { status, isDeleted } = student.receipt;
+    const receipt = student.receipt;
     
-    if (isDeleted) {
-      return <Badge variant="destructive">Receipt Deleted</Badge>;
+    if (!receipt || receipt.isDeleted) {
+      return <Badge variant="destructive">Not Available</Badge>;
     }
     
-    switch (status) {
+    switch (receipt.status) {
       case 'available':
         return <Badge variant="default" className="bg-green-600">Available</Badge>;
       case 'generating':
         return <Badge variant="secondary">Generating</Badge>;
       case 'not_available':
-        return <Badge variant="destructive">Not Available</Badge>;
+        return <Badge variant="destructive">Not Generated</Badge>;
       default:
         return <Badge variant="outline">Unknown</Badge>;
     }
   };
 
   const getStatusIcon = () => {
-    const { status, isDeleted } = student.receipt;
+    const receipt = student.receipt;
     
-    if (isDeleted) {
+    if (!receipt || receipt.isDeleted) {
       return <AlertCircle className="h-5 w-5 text-red-600" />;
     }
     
-    switch (status) {
+    switch (receipt.status) {
       case 'available':
         return <CheckCircle className="h-5 w-5 text-green-600" />;
       case 'generating':
@@ -91,7 +161,7 @@ const StudentPortal = ({ onLogout }: StudentPortalProps) => {
     }
   };
 
-  const canDownload = student.receipt.status === 'available' && !student.receipt.isDeleted;
+  const canDownload = student.receipt?.status === 'available' && !student.receipt.isDeleted;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -183,13 +253,13 @@ const StudentPortal = ({ onLogout }: StudentPortalProps) => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {student.receipt.isDeleted ? (
+                {!student.receipt || student.receipt.isDeleted ? (
                   <div className="text-center py-8">
                     <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">Receipt Not Available</h3>
                     <p className="text-gray-600">
-                      This receipt has been removed by the administrator. 
-                      Please contact the office for assistance.
+                      No receipt has been generated for your account yet. 
+                      Please contact the administration office if you believe this is an error.
                     </p>
                   </div>
                 ) : student.receipt.status === 'generating' ? (
@@ -218,29 +288,35 @@ const StudentPortal = ({ onLogout }: StudentPortalProps) => {
                       </div>
                       
                       <div className="grid md:grid-cols-2 gap-4 text-sm">
-                        <div className="flex items-center space-x-2">
-                          <Calendar className="h-4 w-4 text-green-600" />
-                          <div>
-                            <span className="text-green-700">Generated: </span>
-                            <span className="font-medium">{student.receipt.generatedAt}</span>
+                        {student.receipt.generatedAt && (
+                          <div className="flex items-center space-x-2">
+                            <Calendar className="h-4 w-4 text-green-600" />
+                            <div>
+                              <span className="text-green-700">Generated: </span>
+                              <span className="font-medium">{student.receipt.generatedAt}</span>
+                            </div>
                           </div>
-                        </div>
+                        )}
                         
-                        <div className="flex items-center space-x-2">
-                          <DollarSign className="h-4 w-4 text-green-600" />
-                          <div>
-                            <span className="text-green-700">Amount: </span>
-                            <span className="font-medium">₹{student.receipt.amount}</span>
+                        {student.receipt.amount && (
+                          <div className="flex items-center space-x-2">
+                            <DollarSign className="h-4 w-4 text-green-600" />
+                            <div>
+                              <span className="text-green-700">Amount: </span>
+                              <span className="font-medium">₹{student.receipt.amount}</span>
+                            </div>
                           </div>
-                        </div>
+                        )}
                         
-                        <div className="flex items-center space-x-2">
-                          <FileText className="h-4 w-4 text-green-600" />
-                          <div>
-                            <span className="text-green-700">Semester: </span>
-                            <span className="font-medium">{student.receipt.semester}</span>
+                        {student.receipt.semester && (
+                          <div className="flex items-center space-x-2">
+                            <FileText className="h-4 w-4 text-green-600" />
+                            <div>
+                              <span className="text-green-700">Semester: </span>
+                              <span className="font-medium">{student.receipt.semester}</span>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
 
@@ -255,7 +331,7 @@ const StudentPortal = ({ onLogout }: StudentPortalProps) => {
                         Download Receipt PDF
                       </Button>
                       
-                      <Button variant="outline">
+                      <Button variant="outline" onClick={handleRequestEmail}>
                         <Mail className="h-4 w-4 mr-2" />
                         Request Email Copy
                       </Button>

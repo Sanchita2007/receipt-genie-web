@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,22 +10,27 @@ import LoginForm from '@/components/LoginForm';
 const Index = () => {
   const [userRole, setUserRole] = useState<'admin' | 'student' | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [studentEmail, setStudentEmail] = useState<string>('');
 
-  const handleLogin = (role: 'admin' | 'student') => {
+  const handleLogin = (role: 'admin' | 'student', email?: string) => {
     setUserRole(role);
     setIsLoggedIn(true);
+    if (role === 'student' && email) {
+      setStudentEmail(email);
+    }
   };
 
   const handleLogout = () => {
     setUserRole(null);
     setIsLoggedIn(false);
+    setStudentEmail('');
   };
 
   if (isLoggedIn && userRole) {
     return userRole === 'admin' ? (
       <AdminDashboard onLogout={handleLogout} />
     ) : (
-      <StudentPortal onLogout={handleLogout} />
+      <StudentPortal onLogout={handleLogout} studentEmail={studentEmail} />
     );
   }
 
@@ -128,7 +132,7 @@ const Index = () => {
                       <li>• Receipt management & deletion</li>
                     </ul>
                   </div>
-                  <LoginForm role="admin" onLogin={handleLogin} />
+                  <LoginForm role="admin" onLogin={(role) => handleLogin(role)} />
                 </div>
               </CardContent>
             </Card>
@@ -155,7 +159,7 @@ const Index = () => {
                       <li>• Mobile-friendly interface</li>
                     </ul>
                   </div>
-                  <LoginForm role="student" onLogin={handleLogin} />
+                  <LoginForm role="student" onLogin={(role, email) => handleLogin(role, email)} />
                 </div>
               </CardContent>
             </Card>

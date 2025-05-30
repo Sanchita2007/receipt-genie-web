@@ -9,7 +9,7 @@ import { Eye, EyeOff, LogIn } from 'lucide-react';
 
 interface LoginFormProps {
   role: 'admin' | 'student';
-  onLogin: (role: 'admin' | 'student') => void;
+  onLogin: (role: 'admin' | 'student', email?: string) => void;
 }
 
 const LoginForm = ({ role, onLogin }: LoginFormProps) => {
@@ -31,7 +31,7 @@ const LoginForm = ({ role, onLogin }: LoginFormProps) => {
           title: "Login Successful",
           description: `Welcome to the ${role} portal!`,
         });
-        onLogin(role);
+        onLogin(role, credentials.email);
       } else {
         toast({
           title: "Login Failed",
@@ -44,10 +44,12 @@ const LoginForm = ({ role, onLogin }: LoginFormProps) => {
   };
 
   const handleDemoLogin = () => {
-    setCredentials({
+    const demoCredentials = {
       email: role === 'admin' ? 'admin@university.edu' : 'student@university.edu',
       password: 'demo123'
-    });
+    };
+    
+    setCredentials(demoCredentials);
     toast({
       title: "Demo Credentials Filled",
       description: "Click Sign In to continue with demo access",
@@ -64,10 +66,11 @@ const LoginForm = ({ role, onLogin }: LoginFormProps) => {
           <Input
             id={`${role}-email`}
             type="email"
-            placeholder={role === 'admin' ? 'admin@university.edu' : 'student@university.edu'}
+            placeholder={role === 'admin' ? 'admin@university.edu' : 'your.email@university.edu'}
             value={credentials.email}
             onChange={(e) => setCredentials({ ...credentials, email: e.target.value })}
             className="w-full"
+            required
           />
         </div>
 
@@ -81,6 +84,7 @@ const LoginForm = ({ role, onLogin }: LoginFormProps) => {
               value={credentials.password}
               onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
               className="w-full pr-10"
+              required
             />
             <Button
               type="button"

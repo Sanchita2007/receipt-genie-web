@@ -32,6 +32,12 @@ const FileUploadZone = ({
     setIsDragOver(false);
   }, []);
 
+  const validateFile = (file: File): boolean => {
+    const allowedTypes = acceptedTypes.split(',').map(type => type.trim());
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+    return allowedTypes.includes(fileExtension);
+  };
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
@@ -40,9 +46,12 @@ const FileUploadZone = ({
     const file = files[0];
 
     if (file) {
-      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-      if (acceptedTypes.includes(fileExtension)) {
+      if (validateFile(file)) {
         onFileUpload(file);
+        toast({
+          title: "File Uploaded",
+          description: `${file.name} has been uploaded successfully.`,
+        });
       } else {
         toast({
           title: "Invalid File Type",
@@ -56,7 +65,19 @@ const FileUploadZone = ({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      onFileUpload(file);
+      if (validateFile(file)) {
+        onFileUpload(file);
+        toast({
+          title: "File Uploaded",
+          description: `${file.name} has been uploaded successfully.`,
+        });
+      } else {
+        toast({
+          title: "Invalid File Type",
+          description: `Please upload a ${acceptedTypes} file.`,
+          variant: "destructive",
+        });
+      }
     }
   };
 
