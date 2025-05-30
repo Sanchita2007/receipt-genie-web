@@ -106,17 +106,27 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   };
 
   const handleFileUpload = async (files: { template?: File; dataSheet?: File }) => {
-    setUploadedFiles(prev => ({ ...prev, ...files }));
+    console.log('File upload triggered:', files);
+    console.log('Current uploaded files:', uploadedFiles);
+    
+    setUploadedFiles(prev => {
+      const updated = { ...prev, ...files };
+      console.log('Updated files:', updated);
+      return updated;
+    });
     
     if (files.dataSheet) {
       try {
+        console.log('Processing data sheet...');
         const students = await parseExcelFile(files.dataSheet);
+        console.log('Parsed students:', students);
         setStudentData(students);
         toast({
           title: "Data Sheet Processed",
           description: `Found ${students.length} student records.`,
         });
       } catch (error) {
+        console.error('Error parsing file:', error);
         toast({
           title: "Error Processing File",
           description: "Please ensure your Excel file has Name, Email, and Roll Number columns.",
@@ -125,10 +135,19 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       }
     }
     
-    toast({
-      title: "File Uploaded Successfully",
-      description: `${Object.keys(files)[0]} has been uploaded and is ready for processing.`,
-    });
+    if (files.template) {
+      toast({
+        title: "Template Uploaded",
+        description: "Template file has been uploaded successfully.",
+      });
+    }
+    
+    if (files.dataSheet) {
+      toast({
+        title: "Data Sheet Uploaded",
+        description: "Data sheet has been uploaded and processed.",
+      });
+    }
   };
 
   const handleGenerateReceipts = () => {
@@ -224,6 +243,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     sentReceipts: receipts.filter(r => r.sentStatus).length,
     pendingReceipts: receipts.filter(r => !r.sentStatus).length,
   };
+
+  console.log('Render check:', {
+    hasTemplate: !!uploadedFiles.template,
+    hasDataSheet: !!uploadedFiles.dataSheet,
+    studentDataLength: studentData.length,
+    shouldShowGenerate: uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -357,7 +383,19 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   />
                 </div>
 
-                {(uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0) && (
+                {/* Generation Section - Always show debug info */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-gray-900 mb-2">Debug Info</h4>
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <p>Template uploaded: {uploadedFiles.template ? 'Yes' : 'No'}</p>
+                    <p>Data sheet uploaded: {uploadedFiles.dataSheet ? 'Yes' : 'No'}</p>
+                    <p>Students found: {studentData.length}</p>
+                    <p>Show generate: {(uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0) ? 'Yes' : 'No'}</p>
+                  </div>
+                </div>
+
+                {/* Generation Section */}
+                {uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0 && (
                   <div className="bg-blue-50 p-6 rounded-lg">
                     <h3 className="font-semibold text-blue-900 mb-4">Ready to Generate</h3>
                     
@@ -388,6 +426,16 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         </Button>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* Show message if files uploaded but no students found */}
+                {uploadedFiles.template && uploadedFiles.dataSheet && studentData.length === 0 && (
+                  <div className="bg-yellow-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-yellow-800 mb-2">No Student Data Found</h4>
+                    <p className="text-sm text-yellow-700">
+                      Please ensure your data file contains columns with headers that include 'name', 'email', and 'roll' or 'id'.
+                    </p>
                   </div>
                 )}
               </CardContent>
