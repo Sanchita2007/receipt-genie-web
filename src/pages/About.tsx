@@ -13,14 +13,14 @@ const About = () => {
       role: "Developer",
       email: "jararesanchita@gmail.com",
       linkedin: "https://www.linkedin.com/in/sanchitajarare",
-      subtitle: "2nd Year Diploma Student, Computer Engineering, VBVP"
+      skills: ["Python", "Java", "React"]
     },
     {
       name: "Anuraag B. Rathod",
-      role: "Senior Professor",
+      role: "Sr. Professor, AI & ML Dept.",
       email: "",
       linkedin: "",
-      subtitle: "AI & ML Department, VBVP"
+      skills: []
     }
   ];
 
@@ -42,10 +42,11 @@ const About = () => {
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Project Overview */}
-        <div className="text-center mb-12">
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">
-            Fee Receipt Generator
-          </h2>
+        <div className="text-center mb-8">
+          <h2 className="text-4xl font-bold text-gray-900 mb-2">Fee Receipt Generator</h2>
+          <h3 className="text-lg text-gray-600 mb-4 italic">
+            Vidyavardhini's Bhausaheb Vartak Polytechnic
+          </h3>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
             A modern, automated solution for generating and managing fee receipts. 
             Built with cutting-edge technologies to streamline educational administration.
@@ -67,8 +68,8 @@ const About = () => {
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="secondary">React</Badge>
                   <Badge variant="secondary">Tailwind CSS</Badge>
+                  <Badge variant="secondary">Node.js</Badge>
                   <Badge variant="secondary">Vite</Badge>
-                  <Badge variant="secondary">Shadcn/ui</Badge>
                 </div>
               </div>
               <div>
@@ -88,7 +89,7 @@ const About = () => {
         {/* Development Team */}
         <div className="mb-12">
           <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">
-            Meet Our Team
+            Meet Our Development Team
           </h3>
           <div className="grid md:grid-cols-2 gap-6">
             {developers.map((dev, index) => (
@@ -100,25 +101,38 @@ const About = () => {
                     </span>
                   </div>
                   <CardTitle className="text-lg">{dev.name}</CardTitle>
-                  <p className="text-sm text-gray-600">{dev.subtitle}</p>
                   <Badge variant="outline">{dev.role}</Badge>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex justify-center space-x-3">
-                    {dev.email && (
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={`mailto:${dev.email}`}>
-                          <Mail className="h-4 w-4" />
-                        </a>
-                      </Button>
+                  <div className="space-y-4">
+                    {dev.skills.length > 0 && (
+                      <div>
+                        <h5 className="font-semibold text-sm mb-2">Skills</h5>
+                        <div className="flex flex-wrap gap-1">
+                          {dev.skills.map((skill, skillIndex) => (
+                            <Badge key={skillIndex} variant="secondary" className="text-xs">
+                              {skill}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                    {dev.linkedin && (
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={dev.linkedin} target="_blank" rel="noopener noreferrer">
-                          <Linkedin className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    )}
+                    <div className="flex justify-center space-x-3">
+                      {dev.email && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={`mailto:${dev.email}`}>
+                            <Mail className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                      {dev.linkedin && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={dev.linkedin} target="_blank" rel="noopener noreferrer">
+                            <Linkedin className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -151,4 +165,3 @@ const About = () => {
 };
 
 export default About;
-
