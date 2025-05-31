@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,13 +20,23 @@ import {
 } from 'lucide-react';
 import FileUploadZone from '@/components/FileUploadZone';
 import ReceiptList from '@/components/ReceiptList';
+import { sendReceiptEmail } from '@/utils/emailService';
 
 interface StudentData {
-  name: string;
-  email: string;
-  rollNumber: string;
-  amount?: number;
-  semester?: string;
+  'NAME OF THE STUDENT': string;
+  'DATE': string;
+  'CAT': string;
+  'IN WORDS': string;
+  'YEAR & COURSE': string;
+  'TUITION FEE': string;
+  'DEV. FEE': string;
+  'EXAM FEE': string;
+  'ENROLLMENT FEE': string;
+  'OTHER FEE': string;
+  'TOTAL': string;
+  'BANK NAME': string;
+  'PAY ORDER NO.': string;
+  email?: string;
   [key: string]: any;
 }
 
@@ -37,13 +48,28 @@ interface Receipt {
   status: string;
   sentStatus: boolean;
   generatedAt: string;
-  amount?: number;
-  semester?: string;
+  context: any;
 }
 
 interface AdminDashboardProps {
   onLogout: () => void;
 }
+
+const REQUIRED_FIELDS = [
+  'NAME OF THE STUDENT',
+  'DATE',
+  'CAT',
+  'IN WORDS',
+  'YEAR & COURSE',
+  'TUITION FEE',
+  'DEV. FEE',
+  'EXAM FEE',
+  'ENROLLMENT FEE',
+  'OTHER FEE',
+  'TOTAL',
+  'BANK NAME',
+  'PAY ORDER NO.'
+];
 
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [uploadedFiles, setUploadedFiles] = useState<{
@@ -57,6 +83,22 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [generationProgress, setGenerationProgress] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
+  const validateRequiredFields = (headers: string[]): boolean => {
+    const missingFields = REQUIRED_FIELDS.filter(field => 
+      !headers.some(header => header.toLowerCase().includes(field.toLowerCase()) || 
+        header.toUpperCase() === field)
+    );
+    
+    if (missingFields.length > 0) {
+      setValidationErrors(missingFields);
+      return false;
+    }
+    
+    setValidationErrors([]);
+    return true;
+  };
 
   const parseExcelFile = async (file: File): Promise<StudentData[]> => {
     return new Promise((resolve, reject) => {
@@ -66,7 +108,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           const data = e.target?.result as string;
           console.log('File content preview:', data.substring(0, 200));
           
-          // Handle both CSV and potentially TSV formats
           const lines = data.split('\n').filter(line => line.trim());
           if (lines.length < 2) {
             console.log('Not enough lines in file');
@@ -74,7 +115,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
             return;
           }
           
-          // Try comma first, then semicolon, then tab
           let delimiter = ',';
           if (lines[0].includes(';') && !lines[0].includes(',')) {
             delimiter = ';';
@@ -86,6 +126,17 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           const headers = lines[0].split(delimiter).map(h => h.trim().replace(/['"]/g, ''));
           console.log('Headers found:', headers);
           
+          // Validate required fields
+          if (!validateRequiredFields(headers)) {
+            toast({
+              title: "Missing Required Fields",
+              description: `The following required fields are missing: ${validationErrors.join(', ')}`,
+              variant: "destructive",
+            });
+            resolve([]);
+            return;
+          }
+          
           const students: StudentData[] = [];
           for (let i = 1; i < lines.length; i++) {
             if (lines[i].trim()) {
@@ -94,25 +145,16 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               
               headers.forEach((header, index) => {
                 const value = values[index] || '';
-                const lowerHeader = header.toLowerCase();
+                student[header] = value;
                 
-                if (lowerHeader.includes('name') || lowerHeader.includes('student')) {
-                  student.name = value;
-                } else if (lowerHeader.includes('email') || lowerHeader.includes('mail')) {
+                // Also map email field if present
+                if (header.toLowerCase().includes('email') || header.toLowerCase().includes('mail')) {
                   student.email = value;
-                } else if (lowerHeader.includes('roll') || lowerHeader.includes('id') || lowerHeader.includes('number')) {
-                  student.rollNumber = value;
-                } else if (lowerHeader.includes('amount') || lowerHeader.includes('fee') || lowerHeader.includes('cost')) {
-                  student.amount = parseFloat(value) || 0;
-                } else if (lowerHeader.includes('semester') || lowerHeader.includes('sem')) {
-                  student.semester = value;
-                } else {
-                  student[header] = value;
                 }
               });
               
               console.log('Parsed student:', student);
-              if (student.name && student.email && student.rollNumber) {
+              if (student['NAME OF THE STUDENT']) {
                 students.push(student as StudentData);
               }
             }
@@ -131,7 +173,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
   const handleFileUpload = async (files: { template?: File; dataSheet?: File }) => {
     console.log('File upload triggered:', files);
-    console.log('Current uploaded files:', uploadedFiles);
     
     setUploadedFiles(prev => {
       const updated = { ...prev, ...files };
@@ -145,15 +186,17 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         const students = await parseExcelFile(files.dataSheet);
         console.log('Parsed students:', students);
         setStudentData(students);
-        toast({
-          title: "Data Sheet Processed",
-          description: `Found ${students.length} student records.`,
-        });
+        if (students.length > 0) {
+          toast({
+            title: "Data Sheet Processed",
+            description: `Found ${students.length} student records with all required fields.`,
+          });
+        }
       } catch (error) {
         console.error('Error parsing file:', error);
         toast({
           title: "Error Processing File",
-          description: "Please ensure your Excel file has Name, Email, and Roll Number columns.",
+          description: "Please ensure your Excel file has all required template fields.",
           variant: "destructive",
         });
       }
@@ -165,13 +208,26 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         description: "Template file has been uploaded successfully.",
       });
     }
-    
-    if (files.dataSheet) {
-      toast({
-        title: "Data Sheet Uploaded",
-        description: "Data sheet has been uploaded and processed.",
-      });
-    }
+  };
+
+  const generateReceiptContext = (student: StudentData, index: number) => {
+    const name = student['NAME OF THE STUDENT'];
+    return {
+      receipt_no: index + 1,
+      date: student['DATE'],
+      caste: student['CAT'],
+      name: name,
+      In_words: student['IN WORDS'],
+      engineering: student['YEAR & COURSE'],
+      Tuition_Fee: student['TUITION FEE'],
+      Development: student['DEV. FEE'],
+      Board_Exam: student['EXAM FEE'],
+      Enrollment_Fee: student['ENROLLMENT FEE'],
+      Others_fee: student['OTHER FEE'],
+      TOTAL: student['TOTAL'],
+      Bank_Name: student['BANK NAME'],
+      Pay_Order: student['PAY ORDER NO.']
+    };
   };
 
   const handleGenerateReceipts = () => {
@@ -187,7 +243,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     if (studentData.length === 0) {
       toast({
         title: "No Student Data",
-        description: "No valid student data found in the uploaded file.",
+        description: "No valid student data found or missing required fields in the uploaded file.",
         variant: "destructive",
       });
       return;
@@ -198,14 +254,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     const newReceipts: Receipt[] = studentData.map((student, index) => ({
       id: Date.now() + index,
-      studentName: student.name,
-      email: student.email,
-      rollNumber: student.rollNumber,
+      studentName: student['NAME OF THE STUDENT'],
+      email: student.email || '',
+      rollNumber: `Receipt-${index + 1}`,
       status: 'generated',
       sentStatus: false,
       generatedAt: new Date().toLocaleDateString(),
-      amount: student.amount,
-      semester: student.semester
+      context: generateReceiptContext(student, index)
     }));
 
     const totalSteps = studentData.length;
@@ -222,19 +277,19 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         setReceipts(newReceipts);
         toast({
           title: "Generation Complete",
-          description: `Successfully generated ${newReceipts.length} receipts!`,
+          description: `Successfully generated ${newReceipts.length} receipts with all required data!`,
         });
       }
     }, 200);
   };
 
-  const handleSendEmails = () => {
-    const pendingReceipts = receipts.filter(r => !r.sentStatus);
+  const handleSendEmails = async () => {
+    const pendingReceipts = receipts.filter(r => !r.sentStatus && r.email);
     
     if (pendingReceipts.length === 0) {
       toast({
         title: "No Pending Receipts",
-        description: "All receipts have already been sent.",
+        description: "All receipts have been sent or no email addresses found.",
       });
       return;
     }
@@ -243,15 +298,32 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       title: "Sending Emails",
       description: `Starting email distribution for ${pendingReceipts.length} receipts.`,
     });
-    
-    setReceipts(prev => prev.map(receipt => ({ ...receipt, sentStatus: true })));
-    
-    setTimeout(() => {
+
+    try {
+      for (const receipt of pendingReceipts) {
+        await sendReceiptEmail(receipt.email, receipt.studentName, receipt.context);
+        
+        // Update receipt status
+        setReceipts(prev => prev.map(r => 
+          r.id === receipt.id ? { ...r, sentStatus: true } : r
+        ));
+        
+        // Small delay between emails
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
       toast({
         title: "Emails Sent Successfully",
         description: `All ${pendingReceipts.length} emails have been delivered.`,
       });
-    }, 2000);
+    } catch (error) {
+      console.error('Email sending failed:', error);
+      toast({
+        title: "Email Sending Failed",
+        description: "Some emails could not be sent. Please check your email configuration.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDeleteReceipt = (id: number) => {
@@ -267,13 +339,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     sentReceipts: receipts.filter(r => r.sentStatus).length,
     pendingReceipts: receipts.filter(r => !r.sentStatus).length,
   };
-
-  console.log('Render check:', {
-    hasTemplate: !!uploadedFiles.template,
-    hasDataSheet: !!uploadedFiles.dataSheet,
-    studentDataLength: studentData.length,
-    shouldShowGenerate: uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0
-  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -351,6 +416,28 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           </Card>
         </div>
 
+        {/* Validation Errors */}
+        {validationErrors.length > 0 && (
+          <Card className="mb-8 border-red-200">
+            <CardHeader>
+              <CardTitle className="text-red-800">Missing Required Fields</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-red-50 p-4 rounded-lg">
+                <p className="text-red-700 mb-2">Your Excel file is missing the following required fields:</p>
+                <ul className="list-disc list-inside text-red-600 text-sm space-y-1">
+                  {validationErrors.map((field, index) => (
+                    <li key={index}>{field}</li>
+                  ))}
+                </ul>
+                <p className="text-red-700 text-sm mt-3">
+                  Please ensure your Excel file contains all these exact column headers before proceeding.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Data Preview */}
         {studentData.length > 0 && (
           <Card className="mb-8">
@@ -358,12 +445,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               <CardTitle>Data Preview</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h4 className="font-semibold text-blue-900 mb-2">
-                  Found {studentData.length} students in your data file
+              <div className="bg-green-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-green-900 mb-2">
+                  ✅ Found {studentData.length} students with all required fields
                 </h4>
-                <div className="text-sm text-blue-700">
-                  <p>Sample data: {studentData[0]?.name} ({studentData[0]?.email}) - {studentData[0]?.rollNumber}</p>
+                <div className="text-sm text-green-700">
+                  <p>Sample: {studentData[0]?.['NAME OF THE STUDENT']} - {studentData[0]?.['YEAR & COURSE']}</p>
                   {studentData.length > 1 && (
                     <p>And {studentData.length - 1} more students...</p>
                   )}
@@ -400,35 +487,24 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   />
                   <FileUploadZone
                     title="Excel Data"
-                    description="Upload student data with Name, Email, Roll Number columns (.xlsx, .csv)"
+                    description="Upload student data with ALL required template fields (.xlsx, .csv)"
                     acceptedTypes=".xlsx,.csv"
                     onFileUpload={(file) => handleFileUpload({ dataSheet: file })}
                     uploadedFile={uploadedFiles.dataSheet}
                   />
                 </div>
 
-                {/* Generation Section - Always show debug info */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-semibold text-gray-900 mb-2">Debug Info</h4>
-                  <div className="text-sm text-gray-600 space-y-1">
-                    <p>Template uploaded: {uploadedFiles.template ? 'Yes' : 'No'}</p>
-                    <p>Data sheet uploaded: {uploadedFiles.dataSheet ? 'Yes' : 'No'}</p>
-                    <p>Students found: {studentData.length}</p>
-                    <p>Show generate: {(uploadedFiles.template && uploadedFiles.dataSheet && studentData.length > 0) ? 'Yes' : 'No'}</p>
-                  </div>
-                </div>
-
-                {/* Generate Button - Show when both files are uploaded */}
+                {/* Generate Button - Show when both files are uploaded and data is valid */}
                 {uploadedFiles.template && uploadedFiles.dataSheet && (
                   <div className="bg-blue-50 p-6 rounded-lg">
                     <h3 className="font-semibold text-blue-900 mb-4">
-                      {studentData.length > 0 ? 'Ready to Generate' : 'Files Uploaded - Generate Receipts'}
+                      {studentData.length > 0 ? 'Ready to Generate' : 'Processing Files...'}
                     </h3>
                     
-                    {studentData.length > 0 && (
+                    {studentData.length > 0 && validationErrors.length === 0 && (
                       <div className="mb-4 p-3 bg-green-100 rounded-lg">
                         <p className="text-green-800 text-sm">
-                          ✅ Found {studentData.length} student records in your data file
+                          ✅ Found {studentData.length} student records with all required template fields
                         </p>
                       </div>
                     )}
@@ -446,7 +522,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     <div className="flex space-x-4">
                       <Button 
                         onClick={handleGenerateReceipts}
-                        disabled={isGenerating}
+                        disabled={isGenerating || studentData.length === 0 || validationErrors.length > 0}
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         <FileText className="h-4 w-4 mr-2" />
@@ -459,21 +535,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       {generationProgress === 100 && receipts.length > 0 && (
                         <Button onClick={handleSendEmails} className="bg-green-600 hover:bg-green-700">
                           <Mail className="h-4 w-4 mr-2" />
-                          Send All Emails ({receipts.filter(r => !r.sentStatus).length})
+                          Send All Emails ({receipts.filter(r => !r.sentStatus && r.email).length})
                         </Button>
                       )}
                     </div>
-                  </div>
-                )}
-
-                {/* Show message if files uploaded but no students found */}
-                {uploadedFiles.template && uploadedFiles.dataSheet && studentData.length === 0 && (
-                  <div className="bg-yellow-50 p-4 rounded-lg">
-                    <h4 className="font-semibold text-yellow-800 mb-2">No Student Data Found</h4>
-                    <p className="text-sm text-yellow-700">
-                      Please ensure your data file contains columns with headers that include 'name', 'email', and 'roll' or 'id'.
-                      The system will try to parse the file anyway when you click Generate.
-                    </p>
                   </div>
                 )}
               </CardContent>
