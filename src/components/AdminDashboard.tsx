@@ -186,6 +186,16 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       return updated;
     });
     
+    // Pass template to receipt storage system
+    if (files.template) {
+      const { setTemplate } = await import('@/utils/receiptStorage');
+      setTemplate(files.template);
+      toast({
+        title: "Template Uploaded",
+        description: "Template file has been uploaded and will be used for receipt generation.",
+      });
+    }
+    
     if (files.dataSheet) {
       try {
         console.log('Processing data sheet...');
@@ -206,13 +216,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           variant: "destructive",
         });
       }
-    }
-    
-    if (files.template) {
-      toast({
-        title: "Template Uploaded",
-        description: "Template file has been uploaded successfully.",
-      });
     }
   };
 
