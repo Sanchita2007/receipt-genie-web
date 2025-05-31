@@ -1,13 +1,16 @@
+
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { GraduationCap, Shield, Upload, Mail, FileText, Users } from 'lucide-react';
+import { GraduationCap, Shield, Upload, Mail, FileText, Users, Info } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import AdminDashboard from '@/components/AdminDashboard';
 import StudentPortal from '@/components/StudentPortal';
 import LoginForm from '@/components/LoginForm';
 
 const Index = () => {
+  const navigate = useNavigate();
   const [userRole, setUserRole] = useState<'admin' | 'student' | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [studentEmail, setStudentEmail] = useState<string>('');
@@ -49,9 +52,15 @@ const Index = () => {
                 <p className="text-sm text-gray-500">Automated Receipt Management System</p>
               </div>
             </div>
-            <Badge variant="secondary" className="bg-green-100 text-green-800">
-              v2.0 Live
-            </Badge>
+            <div className="flex items-center space-x-4">
+              <Button variant="ghost" onClick={() => navigate('/about')}>
+                <Info className="h-4 w-4 mr-2" />
+                About
+              </Button>
+              <Badge variant="secondary" className="bg-green-100 text-green-800">
+                v2.0 Live
+              </Badge>
+            </div>
           </div>
         </div>
       </header>

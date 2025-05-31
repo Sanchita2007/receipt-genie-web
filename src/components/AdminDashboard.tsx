@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,11 +15,15 @@ import {
   CheckCircle, 
   AlertCircle,
   LogOut,
-  GraduationCap
+  GraduationCap,
+  Eye,
+  FolderOpen
 } from 'lucide-react';
 import FileUploadZone from '@/components/FileUploadZone';
 import ReceiptList from '@/components/ReceiptList';
+import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
 import { sendReceiptEmail } from '@/utils/emailService';
+import { downloadReceiptAsHTML } from '@/utils/receiptStorage';
 
 interface StudentData {
   'NAME OF THE STUDENT': string;
@@ -84,6 +87,9 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [previewReceipt, setPreviewReceipt] = useState<Receipt | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [storageLocation, setStorageLocation] = useState<string>('');
 
   const validateRequiredFields = (headers: string[]): boolean => {
     const missingFields = REQUIRED_FIELDS.filter(field => 
@@ -256,7 +262,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       id: Date.now() + index,
       studentName: student['NAME OF THE STUDENT'],
       email: student.email || '',
-      rollNumber: `Receipt-${index + 1}`,
+      rollNumber: `ENR-${index + 1}-${Date.now()}`,
       status: 'generated',
       sentStatus: false,
       generatedAt: new Date().toLocaleDateString(),
@@ -281,6 +287,35 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         });
       }
     }, 200);
+  };
+
+  const handlePreviewReceipt = (receipt: Receipt) => {
+    setPreviewReceipt(receipt);
+    setIsPreviewOpen(true);
+  };
+
+  const handleDownloadAll = () => {
+    if (receipts.length === 0) {
+      toast({
+        title: "No Receipts",
+        description: "No receipts available to download.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    receipts.forEach((receipt) => {
+      downloadReceiptAsHTML({
+        studentName: receipt.studentName,
+        enrollmentNo: receipt.rollNumber,
+        receiptData: receipt.context
+      });
+    });
+
+    toast({
+      title: "Bulk Download Started",
+      description: `Downloading ${receipts.length} receipts to your default downloads folder.`,
+    });
   };
 
   const handleSendEmails = async () => {
@@ -519,7 +554,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       </div>
                     )}
 
-                    <div className="flex space-x-4">
+                    <div className="flex flex-wrap gap-4">
                       <Button 
                         onClick={handleGenerateReceipts}
                         disabled={isGenerating || studentData.length === 0 || validationErrors.length > 0}
@@ -533,10 +568,17 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       </Button>
 
                       {generationProgress === 100 && receipts.length > 0 && (
-                        <Button onClick={handleSendEmails} className="bg-green-600 hover:bg-green-700">
-                          <Mail className="h-4 w-4 mr-2" />
-                          Send All Emails ({receipts.filter(r => !r.sentStatus && r.email).length})
-                        </Button>
+                        <>
+                          <Button onClick={handleSendEmails} className="bg-green-600 hover:bg-green-700">
+                            <Mail className="h-4 w-4 mr-2" />
+                            Send All Emails ({receipts.filter(r => !r.sentStatus && r.email).length})
+                          </Button>
+                          
+                          <Button onClick={handleDownloadAll} variant="outline">
+                            <Download className="h-4 w-4 mr-2" />
+                            Download All Receipts
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -546,7 +588,37 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           </TabsContent>
 
           <TabsContent value="manage">
-            <ReceiptList receipts={receipts} onDelete={handleDeleteReceipt} />
+            <div className="space-y-6">
+              {receipts.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span>Receipt Management</span>
+                      <div className="flex space-x-2">
+                        <Button 
+                          onClick={() => receipts.length > 0 && handlePreviewReceipt(receipts[0])}
+                          variant="outline"
+                          size="sm"
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          Preview Sample
+                        </Button>
+                        <Button onClick={handleDownloadAll} variant="outline" size="sm">
+                          <FolderOpen className="h-4 w-4 mr-2" />
+                          Save All to Folder
+                        </Button>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+              )}
+              
+              <ReceiptList 
+                receipts={receipts} 
+                onDelete={handleDeleteReceipt}
+                onPreview={handlePreviewReceipt}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="settings">
@@ -574,6 +646,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Receipt Preview Dialog */}
+      <ReceiptPreviewDialog
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        receipt={previewReceipt}
+      />
     </div>
   );
 };
