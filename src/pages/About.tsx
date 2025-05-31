@@ -10,7 +10,7 @@ const About = () => {
   const developers = [
     {
       name: "Sanchita Jarare",
-      role: "Developer",
+      role: "Developer, 2nd yr Student at Vidyavardhini's Bhausaheb Vartak Polytechnic, Computer Department",
       email: "jararesanchita@gmail.com",
       linkedin: "https://www.linkedin.com/in/sanchitajarare",
       skills: ["Python", "Java", "React"]
