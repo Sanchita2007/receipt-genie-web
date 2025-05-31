@@ -10,14 +10,14 @@ const About = () => {
   const developers = [
     {
       name: "Sanchita Jarare",
-      role: "Developer, 2nd yr Student at Vidyavardhini's Bhausaheb Vartak Polytechnic, Computer Department",
+      role: "Developer, Student at Vidyavardhini's Bhausaheb Vartak Polytechnic, Computer Engineering Department.",
       email: "jararesanchita@gmail.com",
       linkedin: "https://www.linkedin.com/in/sanchitajarare",
       skills: ["Python", "Java", "React"]
     },
     {
       name: "Anuraag B. Rathod",
-      role: "Sr. Professor, AI & ML Dept.",
+      role: "Sr. Professor, AI & ML Department,Vidyavardhini's Bhausaheb Vartak Polytechnic. ",
       email: "",
       linkedin: "",
       skills: []
@@ -69,7 +69,7 @@ const About = () => {
                   <Badge variant="secondary">React</Badge>
                   <Badge variant="secondary">Tailwind CSS</Badge>
                   <Badge variant="secondary">Node.js</Badge>
-                  <Badge variant="secondary">Vite</Badge>
+                  
                 </div>
               </div>
               <div>
@@ -79,7 +79,7 @@ const About = () => {
                   <li>• Automated email distribution</li>
                   <li>• Real-time progress tracking</li>
                   <li>• Receipt preview and download</li>
-                  <li>• Role-based access control</li>
+                  
                 </ul>
               </div>
             </div>
@@ -139,29 +139,5 @@ const About = () => {
             ))}
           </div>
         </div>
-
-        {/* Footer */}
-        <div className="text-center">
-          <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-center mb-4">
-                <Heart className="h-5 w-5 text-red-500 mr-2" />
-                <span className="text-gray-700">Made with love for educational institutions</span>
-              </div>
-              <p className="text-gray-600 text-sm">
-                This project is designed to simplify fee receipt management and improve 
-                administrative efficiency in educational institutions.
-              </p>
-              <div className="mt-4">
-                <Badge variant="secondary">Version 2.0</Badge>
-                <Badge variant="secondary" className="ml-2">Open Source</Badge>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    </div>
-  );
-};
 
 export default About;
