@@ -1,8 +1,7 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Github, Linkedin, Mail, Code, Heart } from 'lucide-react';
+import { ArrowLeft, Linkedin, Mail, Code, Heart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const About = () => {
@@ -10,28 +9,18 @@ const About = () => {
 
   const developers = [
     {
-      name: "Alex Johnson",
-      role: "Lead Developer",
-      email: "alex.johnson@example.com",
-      github: "https://github.com/alexjohnson",
-      linkedin: "https://linkedin.com/in/alexjohnson",
-      skills: ["React", "TypeScript", "Node.js", "Python"]
+      name: "Sanchita Jarare",
+      role: "Developer",
+      email: "jararesanchita@gmail.com",
+      linkedin: "https://www.linkedin.com/in/sanchitajarare",
+      subtitle: "2nd Year Diploma Student, Computer Engineering, VBVP"
     },
     {
-      name: "Sarah Chen",
-      role: "Frontend Developer",
-      email: "sarah.chen@example.com",
-      github: "https://github.com/sarahchen",
-      linkedin: "https://linkedin.com/in/sarahchen",
-      skills: ["React", "UI/UX", "Tailwind CSS", "JavaScript"]
-    },
-    {
-      name: "Michael Rodriguez",
-      role: "Backend Developer",
-      email: "michael.rodriguez@example.com",
-      github: "https://github.com/michaelr",
-      linkedin: "https://linkedin.com/in/michaelrodriguez",
-      skills: ["Node.js", "Database Design", "API Development", "DevOps"]
+      name: "Anuraag B. Rathod",
+      role: "Senior Professor",
+      email: "",
+      linkedin: "",
+      subtitle: "AI & ML Department, VBVP"
     }
   ];
 
@@ -77,7 +66,6 @@ const About = () => {
                 <h4 className="font-semibold mb-2">Technologies Used</h4>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="secondary">React</Badge>
-                  <Badge variant="secondary">TypeScript</Badge>
                   <Badge variant="secondary">Tailwind CSS</Badge>
                   <Badge variant="secondary">Vite</Badge>
                   <Badge variant="secondary">Shadcn/ui</Badge>
@@ -100,9 +88,9 @@ const About = () => {
         {/* Development Team */}
         <div className="mb-12">
           <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">
-            Meet Our Development Team
+            Meet Our Team
           </h3>
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 gap-6">
             {developers.map((dev, index) => (
               <Card key={index} className="hover:shadow-lg transition-shadow">
                 <CardHeader className="text-center">
@@ -112,37 +100,25 @@ const About = () => {
                     </span>
                   </div>
                   <CardTitle className="text-lg">{dev.name}</CardTitle>
+                  <p className="text-sm text-gray-600">{dev.subtitle}</p>
                   <Badge variant="outline">{dev.role}</Badge>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <h5 className="font-semibold text-sm mb-2">Skills</h5>
-                      <div className="flex flex-wrap gap-1">
-                        {dev.skills.map((skill, skillIndex) => (
-                          <Badge key={skillIndex} variant="secondary" className="text-xs">
-                            {skill}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex justify-center space-x-3">
+                  <div className="flex justify-center space-x-3">
+                    {dev.email && (
                       <Button variant="ghost" size="sm" asChild>
                         <a href={`mailto:${dev.email}`}>
                           <Mail className="h-4 w-4" />
                         </a>
                       </Button>
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={dev.github} target="_blank" rel="noopener noreferrer">
-                          <Github className="h-4 w-4" />
-                        </a>
-                      </Button>
+                    )}
+                    {dev.linkedin && (
                       <Button variant="ghost" size="sm" asChild>
                         <a href={dev.linkedin} target="_blank" rel="noopener noreferrer">
                           <Linkedin className="h-4 w-4" />
                         </a>
                       </Button>
-                    </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -175,3 +151,4 @@ const About = () => {
 };
 
 export default About;
+
