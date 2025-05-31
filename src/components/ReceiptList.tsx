@@ -41,14 +41,16 @@ interface Receipt {
   status: string;
   sentStatus: boolean;
   generatedAt: string;
+  context: any;
 }
 
 interface ReceiptListProps {
   receipts: Receipt[];
   onDelete: (id: number) => void;
+  onPreview: (receipt: Receipt) => void;
 }
 
-const ReceiptList = ({ receipts, onDelete }: ReceiptListProps) => {
+const ReceiptList = ({ receipts, onDelete, onPreview }: ReceiptListProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReceipts, setSelectedReceipts] = useState<number[]>([]);
 
@@ -161,7 +163,7 @@ const ReceiptList = ({ receipts, onDelete }: ReceiptListProps) => {
                   <TableCell>{receipt.generatedAt}</TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end space-x-2">
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="sm" onClick={() => onPreview(receipt)}>
                         <Eye className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="sm">
