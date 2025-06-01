@@ -57,9 +57,6 @@ const Index = () => {
                 <Info className="h-4 w-4 mr-2" />
                 About
               </Button>
-              <Badge variant="secondary" className="bg-green-100 text-green-800">
-                v2.0 Live
-              </Badge>
             </div>
           </div>
         </div>
