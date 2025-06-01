@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,6 +31,7 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast'; // Import toast
 
 interface Receipt {
   id: number;
@@ -48,11 +48,50 @@ interface ReceiptListProps {
   receipts: Receipt[];
   onDelete: (id: number) => void;
   onPreview: (receipt: Receipt) => void;
+  isTemplateUploaded: boolean;
 }
 
-const ReceiptList = ({ receipts, onDelete, onPreview }: ReceiptListProps) => {
+const ReceiptList = ({ receipts, onDelete, onPreview, isTemplateUploaded }: ReceiptListProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReceipts, setSelectedReceipts] = useState<number[]>([]);
+
+  const handleDownloadSingleReceipt = async (receipt: Receipt) => {
+    const { downloadReceiptAsPDFFromHTML, getTemplate } = await import('@/utils/receiptStorage');
+    const { processAndDownloadWordTemplateWithDocxtemplater } = await import('@/utils/wordTemplateProcessor');
+    
+    const templateFile = getTemplate(); // Get the actual template File object
+
+    const optionsForDocxtemplater = { 
+        templateFile: templateFile!, // Assert non-null if isTemplateUploaded is true
+        studentName: receipt.studentName, 
+        enrollmentNo: receipt.rollNumber, 
+        studentData: receipt.context 
+    };
+    const optionsForPDF = {
+        studentName: receipt.studentName, 
+        enrollmentNo: receipt.rollNumber, 
+        receiptData: receipt.context 
+    }
+
+    try {
+        if (isTemplateUploaded && templateFile) { // Check if templateFile is actually available
+            await processAndDownloadWordTemplateWithDocxtemplater(optionsForDocxtemplater);
+            toast({ title: "DOCX Downloaded", description: `Receipt for ${receipt.studentName} downloaded as DOCX.` });
+        } else {
+            if (!isTemplateUploaded) {
+              console.warn("Template not uploaded, falling back to PDF for single download.");
+            }
+            if (isTemplateUploaded && !templateFile) {
+              console.warn("isTemplateUploaded is true, but templateFile is null. Falling back to PDF.");
+            }
+            await downloadReceiptAsPDFFromHTML(optionsForPDF);
+            toast({ title: "PDF Downloaded", description: `Receipt for ${receipt.studentName} downloaded as PDF.` });
+        }
+    } catch (error) {
+        toast({ title: "Download Error", description: `Could not download receipt: ${(error as Error).message}`, variant: "destructive" });
+        console.error("Download error for single receipt:", error);
+    }
+  };
 
   const filteredReceipts = receipts.filter(receipt =>
     receipt.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -166,7 +205,7 @@ const ReceiptList = ({ receipts, onDelete, onPreview }: ReceiptListProps) => {
                       <Button variant="ghost" size="sm" onClick={() => onPreview(receipt)}>
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="sm" onClick={() => handleDownloadSingleReceipt(receipt)}>
                         <Download className="h-4 w-4" />
                       </Button>
                       {!receipt.sentStatus && (

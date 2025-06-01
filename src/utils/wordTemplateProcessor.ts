@@ -1,73 +1,91 @@
-
-import { createReport } from 'docx-templates';
+import Docxtemplater from 'docxtemplater';
+import PizZip from 'pizzip';
+import { saveAs } from 'file-saver'; // For downloading
 
 export interface WordTemplateProcessorOptions {
   templateFile: File;
-  studentData: any;
+  studentData: any; // This is the 'context' object from AdminDashboard
   studentName: string;
+  enrollmentNo: string; // Needed for filename
 }
 
-// Function to normalize field names for case-insensitive matching
-const normalizeFieldName = (fieldName: string): string => {
-  return fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
-};
-
-// Function to create a mapping object with normalized keys
-const createNormalizedDataMapping = (studentData: any): Record<string, any> => {
-  const normalizedMapping: Record<string, any> = {};
-  
-  // Create both original and normalized key mappings
-  Object.keys(studentData).forEach(key => {
-    const value = studentData[key];
-    normalizedMapping[key] = value; // Keep original key
-    normalizedMapping[normalizeFieldName(key)] = value; // Add normalized key
-    
-    // Add common variations
-    const lowerKey = key.toLowerCase();
-    normalizedMapping[lowerKey] = value;
-    normalizedMapping[key.replace(/\s+/g, '').toLowerCase()] = value;
+// Helper function to load a file as ArrayBuffer
+const loadFileAsArrayBuffer = (file: File): Promise<ArrayBuffer> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target && event.target.result) {
+        resolve(event.target.result as ArrayBuffer);
+      } else {
+        reject(new Error('Failed to read file.'));
+      }
+    };
+    reader.onerror = (error) => {
+      reject(error);
+    };
+    reader.readAsArrayBuffer(file);
   });
-
-  return normalizedMapping;
 };
 
-export const processWordTemplate = async (options: WordTemplateProcessorOptions): Promise<Blob> => {
-  const { templateFile, studentData, studentName } = options;
-  
+export const processAndDownloadWordTemplateWithDocxtemplater = async (
+  options: WordTemplateProcessorOptions
+): Promise<void> => {
+  const { templateFile, studentData, studentName, enrollmentNo } = options;
+
   try {
-    // Read the template file as ArrayBuffer
-    const templateBuffer = await templateFile.arrayBuffer();
-    
-    // Create normalized data mapping for case-insensitive matching
-    const normalizedData = createNormalizedDataMapping(studentData);
-    
-    console.log('Processing template with data:', normalizedData);
-    
-    // Process the template with the student data
-    const report = await createReport({
-      template: templateBuffer,
-      data: normalizedData,
-      cmdDelimiter: ['{{', '}}'], // Use {{ }} as delimiters
-      failFast: false, // Don't fail on missing variables
-    });
-    
-    return new Blob([report], { 
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
-    });
-    
-  } catch (error) {
-    console.error('Error processing Word template:', error);
-    throw new Error(`Failed to process Word template: ${error.message}`);
-  }
-};
+    console.log('Loading template file for docxtemplater...');
+    const content = await loadFileAsArrayBuffer(templateFile);
+    console.log('Template file loaded.');
 
-export const downloadWordReceipt = (blob: Blob, studentName: string, enrollmentNo: string) => {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `Receipt_${studentName.replace(/\s+/g, '_')}_${enrollmentNo}.docx`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+    const zip = new PizZip(content);
+    console.log('PizZip instance created.');
+    
+    // Crucial: Set delimiters to match your template {{placeholder}}
+    const doc = new Docxtemplater(zip, {
+        paragraphLoop: true,
+        linebreaks: true, // Handles \n in data -> <w:br/> in Word
+        delimiters: {
+            start: '{{',
+            end: '}}',
+        },
+    });
+    console.log('Docxtemplater instance created with custom delimiters.');
+
+    console.log('Setting template data:', studentData);
+    doc.setData(studentData);
+
+    try {
+      console.log('Rendering document...');
+      doc.render(); // Render the document (replace placeholders)
+      console.log('Document rendered.');
+    } catch (renderError: any) {
+      console.error('Error rendering document with docxtemplater:', renderError);
+      // Log detailed errors if available (often in renderError.properties.errors)
+      if (renderError.properties && renderError.properties.errors) {
+        renderError.properties.errors.forEach((err: any) => {
+          console.error('Detailed render error:', err.stack || err);
+        });
+      }
+      throw new Error(`Docxtemplater render error: ${renderError.message || String(renderError)}`);
+    }
+
+    console.log('Generating output blob...');
+    const outBlob = doc.getZip().generate({
+      type: 'blob',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    console.log('Output blob generated.');
+
+    // Use file-saver to trigger download
+    const filename = `Receipt_${studentName.replace(/\s+/g, '_')}_${enrollmentNo}.docx`;
+    saveAs(outBlob, filename);
+    console.log(`File ${filename} download triggered.`);
+
+  } catch (error) {
+    console.error(`Error in processAndDownloadWordTemplateWithDocxtemplater for ${studentName}:`, error);
+    const errorMessage = (error instanceof Error) ? error.message : String(error);
+    // Re-throw the error so it can be caught by the calling function (e.g., in AdminDashboard)
+    // and potentially shown to the user via a toast.
+    throw new Error(`Failed to process Word template: ${errorMessage}`);
+  }
 };

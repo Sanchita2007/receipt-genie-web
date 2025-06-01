@@ -1,15 +1,15 @@
-
 import { useCallback, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Upload, FileText, X, CheckCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
-interface FileUploadZoneProps {
+export interface FileUploadZoneProps { // Exporting for use in AdminDashboard
   title: string;
   description: string;
   acceptedTypes: string;
   onFileUpload: (file: File) => void;
+  onFileRemove: () => void;
   uploadedFile: File | null;
 }
 
@@ -18,6 +18,7 @@ const FileUploadZone = ({
   description, 
   acceptedTypes, 
   onFileUpload, 
+  onFileRemove,
   uploadedFile 
 }: FileUploadZoneProps) => {
   const [isDragOver, setIsDragOver] = useState(false);
@@ -82,9 +83,13 @@ const FileUploadZone = ({
   };
 
   const handleRemoveFile = () => {
-    // Reset the input value
     const input = document.getElementById(`file-${title}`) as HTMLInputElement;
     if (input) input.value = '';
+    onFileRemove();
+    toast({
+      title: "File Removed",
+      description: "The file has been removed.",
+    });
   };
 
   return (

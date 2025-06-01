@@ -1,3 +1,4 @@
+// File: src/components/AdminDashboard.tsx
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,7 @@ import FileUploadZone from '@/components/FileUploadZone';
 import ReceiptList from '@/components/ReceiptList';
 import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
 import { sendReceiptEmail } from '@/utils/emailService';
-import { downloadReceiptAsHTML } from '@/utils/receiptStorage';
+import { downloadReceiptAsPDFFromHTML } from '@/utils/receiptStorage';
 
 interface StudentData {
   'NAME OF THE STUDENT': string;
@@ -89,20 +90,26 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [previewReceipt, setPreviewReceipt] = useState<Receipt | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [storageLocation, setStorageLocation] = useState<string>('');
+  // const [storageLocation, setStorageLocation] = useState<string>(''); // storageLocation seems unused, can be removed if not needed
 
-  const validateRequiredFields = (headers: string[]): boolean => {
-    const missingFields = REQUIRED_FIELDS.filter(field => 
-      !headers.some(header => header.toLowerCase().includes(field.toLowerCase()) || 
-        header.toUpperCase() === field)
-    );
+  const validateRequiredFields = (headersFromFile: string[]): boolean => {
+    const localMissingFields = REQUIRED_FIELDS.filter(reqField => {
+      const reqFieldLower = reqField.trim().toLowerCase();
+      const reqFieldUpper = reqField.trim().toUpperCase();
+      return !headersFromFile.some(headerFromFile => {
+        const headerLower = headerFromFile.trim().toLowerCase();
+        const headerUpper = headerFromFile.trim().toUpperCase();
+        // Prioritize exact (case-insensitive) match, then 'includes'
+        return headerLower === reqFieldLower || headerUpper === reqFieldUpper || headerLower.includes(reqFieldLower);
+      });
+    });
     
-    if (missingFields.length > 0) {
-      setValidationErrors(missingFields);
+    if (localMissingFields.length > 0) {
+      setValidationErrors(localMissingFields);
       return false;
     }
     
-    setValidationErrors([]);
+    setValidationErrors([]); // Clear any previous errors
     return true;
   };
 
@@ -112,11 +119,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       reader.onload = (e) => {
         try {
           const data = e.target?.result as string;
-          console.log('File content preview:', data.substring(0, 200));
+          // console.log('File content preview:', data.substring(0, 200));
           
           const lines = data.split('\n').filter(line => line.trim());
           if (lines.length < 2) {
             console.log('Not enough lines in file');
+            toast({ title: "File Error", description: "File is empty or has no data rows.", variant: "destructive" });
             resolve([]);
             return;
           }
@@ -127,66 +135,124 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           } else if (lines[0].includes('\t')) {
             delimiter = '\t';
           }
+          // console.log('Using delimiter:', delimiter);
+
+          const rawHeadersFromFile = lines[0].split(delimiter).map(h => h.trim().replace(/['"]/g, ''));
+          console.log('Headers found in file:', rawHeadersFromFile);
           
-          console.log('Using delimiter:', delimiter);
-          const headers = lines[0].split(delimiter).map(h => h.trim().replace(/['"]/g, ''));
-          console.log('Headers found:', headers);
-          
-          // Validate required fields
-          if (!validateRequiredFields(headers)) {
+          if (!validateRequiredFields(rawHeadersFromFile)) {
             toast({
-              title: "Missing Required Fields",
-              description: `The following required fields are missing: ${validationErrors.join(', ')}`,
+              title: "Missing Required Fields in Header",
+              description: `The Excel file is missing some required columns or they could not be matched: ${validationErrors.join(', ')}. Please check column names.`,
               variant: "destructive",
             });
             resolve([]);
             return;
           }
           
+          // If validation passed, build the mapping from canonical field name to its column index
+          const canonicalToHeaderIndexMap: { [canonicalKey: string]: number } = {};
+          for (const reqField of REQUIRED_FIELDS) {
+            const reqFieldLower = reqField.trim().toLowerCase();
+            const reqFieldUpper = reqField.trim().toUpperCase();
+            
+            // Find the best matching header index
+            let foundIndex = rawHeadersFromFile.findIndex(rawHeader => {
+              const headerLower = rawHeader.trim().toLowerCase();
+              return headerLower === reqFieldLower; // Exact case-insensitive match
+            });
+
+            if (foundIndex === -1) {
+              foundIndex = rawHeadersFromFile.findIndex(rawHeader => {
+                const headerUpper = rawHeader.trim().toUpperCase();
+                return headerUpper === reqFieldUpper; // Exact match (should be covered by above)
+              });
+            }
+
+            if (foundIndex === -1) { // Fallback to 'includes'
+              foundIndex = rawHeadersFromFile.findIndex(rawHeader => {
+                const headerLower = rawHeader.trim().toLowerCase();
+                return headerLower.includes(reqFieldLower);
+              });
+            }
+            
+            if (foundIndex !== -1) {
+              canonicalToHeaderIndexMap[reqField] = foundIndex;
+            } else {
+              // This should not happen if validateRequiredFields passed and has similar logic.
+              // But as a safeguard:
+              console.error(`Logic error: validateRequiredFields passed, but cannot map field: ${reqField}`);
+              setValidationErrors(prev => [...new Set([...prev, reqField])]); // Add to validation errors
+              toast({
+                title: "Header Mapping Discrepancy",
+                description: `Could not map previously validated field: ${reqField}. Please check column names.`,
+                variant: "destructive",
+              });
+              resolve([]);
+              return;
+            }
+          }
+          
           const students: StudentData[] = [];
           for (let i = 1; i < lines.length; i++) {
             if (lines[i].trim()) {
-              const values = lines[i].split(delimiter).map(v => v.trim().replace(/['"]/g, ''));
+              const valuesInRow = lines[i].split(delimiter).map(v => v.trim().replace(/['"]/g, ''));
               const student: Partial<StudentData> = {};
               
-              headers.forEach((header, index) => {
-                const value = values[index] || '';
-                student[header] = value;
-                
-                // Also map email field if present
-                if (header.toLowerCase().includes('email') || header.toLowerCase().includes('mail')) {
-                  student.email = value;
-                }
+              REQUIRED_FIELDS.forEach(reqField => {
+                const columnIndex = canonicalToHeaderIndexMap[reqField];
+                const value = (columnIndex !== undefined && columnIndex < valuesInRow.length && valuesInRow[columnIndex] !== undefined) 
+                              ? valuesInRow[columnIndex] 
+                              : '';
+                student[reqField as keyof StudentData] = value;
               });
               
-              console.log('Parsed student:', student);
-              if (student['NAME OF THE STUDENT']) {
-                students.push(student as StudentData);
+              // Handle 'email' separately as it's optional and might have varied names
+              const emailHeaderCandidate = rawHeadersFromFile.find(h => h.toLowerCase().trim().includes('email') || h.toLowerCase().trim().includes('mail'));
+              if (emailHeaderCandidate) {
+                const emailIndex = rawHeadersFromFile.indexOf(emailHeaderCandidate);
+                if (emailIndex !== -1 && emailIndex < valuesInRow.length && valuesInRow[emailIndex] !== undefined) {
+                  student.email = valuesInRow[emailIndex];
+                } else {
+                  student.email = ''; // Ensure email is at least an empty string if header exists but value is missing
+                }
+              } else {
+                student.email = ''; // Ensure email property exists as empty string if no email header found
+              }
+              
+              // Ensure the main identifier field is present and non-empty to consider it a valid student record
+              if (student['NAME OF THE STUDENT'] && student['NAME OF THE STUDENT'].trim() !== '') {
+                  students.push(student as StudentData);
+              } else {
+                  console.warn('Skipping a row due to missing or empty NAME OF THE STUDENT:', valuesInRow.join(delimiter));
               }
             }
           }
-          console.log('Total valid students:', students.length);
+          console.log('Total valid students parsed:', students.length);
           resolve(students);
         } catch (error) {
-          console.error('Parse error:', error);
+          console.error('Parse error in parseExcelFile:', error);
+          toast({ title: "File Parsing Error", description: (error as Error).message, variant: "destructive" });
           reject(error);
         }
       };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsText(file);
+      reader.onerror = () => {
+        toast({ title: "File Read Error", description: "Failed to read the uploaded file.", variant: "destructive" });
+        reject(new Error('Failed to read file'));
+      }
+      reader.readAsText(file); // Consider specific encodings if necessary, e.g. reader.readAsText(file, 'UTF-8');
     });
   };
 
   const handleFileUpload = async (files: { template?: File; dataSheet?: File }) => {
-    console.log('File upload triggered:', files);
+    // console.log('File upload triggered:', files);
     
     setUploadedFiles(prev => {
       const updated = { ...prev, ...files };
-      console.log('Updated files:', updated);
+      // console.log('Updated files:', updated);
       return updated;
     });
     
-    // Pass template to receipt storage system
     if (files.template) {
       const { setTemplate } = await import('@/utils/receiptStorage');
       setTemplate(files.template);
@@ -198,74 +264,108 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     
     if (files.dataSheet) {
       try {
-        console.log('Processing data sheet...');
+        // console.log('Processing data sheet...');
         const students = await parseExcelFile(files.dataSheet);
-        console.log('Parsed students:', students);
-        setStudentData(students);
-        if (students.length > 0) {
+        // console.log('Parsed students:', students);
+        setStudentData(students); // This will trigger re-render if studentData changes
+        if (students.length > 0 && validationErrors.length === 0) { // Check validationErrors state
           toast({
             title: "Data Sheet Processed",
-            description: `Found ${students.length} student records with all required fields.`,
+            description: `Found ${students.length} student records.`,
           });
+        } else if (students.length === 0 && validationErrors.length === 0) {
+             toast({
+                title: "No Student Data Found",
+                description: "The data sheet was processed, but no valid student records were found.",
+                variant: "default" // Or "warning" if you have one
+            });
         }
+        // If validationErrors.length > 0, a toast is already shown by parseExcelFile or validateRequiredFields
       } catch (error) {
         console.error('Error parsing file:', error);
         toast({
           title: "Error Processing File",
-          description: "Please ensure your Excel file has all required template fields.",
+          description: "An error occurred while processing the data sheet. Check console for details.",
           variant: "destructive",
         });
       }
     }
   };
 
-  const generateReceiptContext = (student: StudentData, index: number) => {
-    const name = student['NAME OF THE STUDENT'];
+// From AdminDashboard.tsx
+const generateReceiptContext = (student: StudentData, index: number) => {
+    // student object now has canonical keys like 'NAME OF THE STUDENT'
+    const name = student['NAME OF THE STUDENT'] || ""; // Add fallback for safety, though parseExcelFile should ensure strings
     return {
-      receipt_no: index + 1,
-      date: student['DATE'],
-      caste: student['CAT'],
-      name: name,
-      In_words: student['IN WORDS'],
-      engineering: student['YEAR & COURSE'],
-      Tuition_Fee: student['TUITION FEE'],
-      Development: student['DEV. FEE'],
-      Board_Exam: student['EXAM FEE'],
-      Enrollment_Fee: student['ENROLLMENT FEE'],
-      Others_fee: student['OTHER FEE'],
-      TOTAL: student['TOTAL'],
-      Bank_Name: student['BANK NAME'],
-      Pay_Order: student['PAY ORDER NO.']
+      receipt_no: (index + 1).toString(), // Ensure it's a string if template expects string
+      date: (student['DATE'] || "").toString(),
+      caste: (student['CAT'] || "").toString(),
+      name: name.toString(), 
+      In_words: (student['IN WORDS'] || "").toString(), 
+      engineering: (student['YEAR & COURSE'] || "").toString(),
+      Tuition_Fee: (student['TUITION FEE'] || "0").toString(), 
+      Development: (student['DEV. FEE'] || "0").toString(), 
+      Board_Exam: (student['EXAM FEE'] || "0").toString(), 
+      Enrollment_Fee: (student['ENROLLMENT FEE'] || "0").toString(), 
+      Others_fee: (student['OTHER FEE'] || "0").toString(), 
+      TOTAL: (student['TOTAL'] || "0").toString(),
+      Bank_Name: (student['BANK NAME'] || "").toString(),
+      Pay_Order: (student['PAY ORDER NO.'] || "").toString(),
+      email: (student.email || "").toString(), // Ensure email is included if needed by templates
     };
   };
 
-  const handleGenerateReceipts = () => {
-    if (!uploadedFiles.template || !uploadedFiles.dataSheet) {
+  const handleGenerateReceipts = () => {    if (!uploadedFiles.template && !uploadedFiles.dataSheet) { // Allow generation if only datasheet is present (for PDF from HTML)
       toast({
-        title: "Missing Files",
-        description: "Please upload both template and data sheet files.",
+        title: "Missing Data Sheet",
+        description: "Please upload at least the data sheet file.",
+        variant: "destructive",
+      });
+      return;
+    }
+        if (!uploadedFiles.dataSheet) {
+       toast({
+        title: "Missing Data Sheet",
+        description: "Please upload the data sheet file.",
         variant: "destructive",
       });
       return;
     }
 
     if (studentData.length === 0) {
-      toast({
-        title: "No Student Data",
-        description: "No valid student data found or missing required fields in the uploaded file.",
-        variant: "destructive",
-      });
+      if (validationErrors.length > 0) {
+        toast({
+          title: "Cannot Generate Receipts",
+          description: "Please resolve the header validation errors before generating receipts.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "No Student Data",
+          description: "No valid student data found in the uploaded file to generate receipts.",
+          variant: "destructive",
+        });
+      }
       return;
     }
+    if (validationErrors.length > 0) {
+       toast({
+          title: "Validation Errors",
+          description: "Please fix the validation errors listed before generating receipts.",
+          variant: "destructive",
+        });
+        return;
+    }
+
 
     setIsGenerating(true);
     setGenerationProgress(0);
 
     const newReceipts: Receipt[] = studentData.map((student, index) => ({
       id: Date.now() + index,
-      studentName: student['NAME OF THE STUDENT'],
+      studentName: student['NAME OF THE STUDENT'] || 'N/A', // Fallback for studentName
       email: student.email || '',
-      rollNumber: `ENR-${index + 1}-${Date.now()}`,
+      rollNumber: `ENR-${index + 1}-${Date.now()}`, // This is a generated roll number
       status: 'generated',
       sentStatus: false,
       generatedAt: new Date().toLocaleDateString(),
@@ -286,15 +386,30 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         setReceipts(newReceipts);
         toast({
           title: "Generation Complete",
-          description: `Successfully generated ${newReceipts.length} receipts with all required data!`,
+          description: `Successfully generated ${newReceipts.length} receipts!`,
         });
       }
     }, 200);
   };
-
-  const handlePreviewReceipt = (receipt: Receipt) => {
-    setPreviewReceipt(receipt);
-    setIsPreviewOpen(true);
+  
+  const handlePreviewReceipt = async (receipt: Receipt) => {
+    if (uploadedFiles.template) {
+      const { processAndDownloadWordTemplateWithDocxtemplater } = await import('@/utils/wordTemplateProcessor');
+      try {
+        await processAndDownloadWordTemplateWithDocxtemplater({
+          templateFile: uploadedFiles.template,
+          studentName: receipt.studentName,
+          enrollmentNo: receipt.rollNumber, // Using the generated rollNumber
+          studentData: receipt.context, // This context should now have correct string values
+        });
+      } catch (error) {
+        console.error("Preview error (DOCX):", error);
+        toast({ title: "Preview Error", description: `Could not generate Word preview: ${(error as Error).message}`, variant: "destructive" });
+      }
+    } else {
+      setPreviewReceipt(receipt);
+      setIsPreviewOpen(true);
+    }
   };
 
   const handleDownloadAll = async () => {
@@ -307,62 +422,72 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       return;
     }
 
-    const { getTemplate, downloadReceiptAsWord, downloadReceiptAsHTML } = await import('@/utils/receiptStorage');
-    const template = getTemplate();
+    const { getTemplate, downloadReceiptAsPDFFromHTML } = await import('@/utils/receiptStorage');
+    const { processAndDownloadWordTemplateWithDocxtemplater } = await import('@/utils/wordTemplateProcessor');
+    const templateFile = getTemplate();
 
-    if (template) {
-      // Use Word template processing
+    if (templateFile) {
       toast({
         title: "Processing Word Templates",
-        description: `Generating ${receipts.length} receipts using your Word template...`,
+        description: `Generating ${receipts.length} DOCX receipts...`,
       });
 
       try {
         for (const receipt of receipts) {
-          await downloadReceiptAsWord({
+          await processAndDownloadWordTemplateWithDocxtemplater({
+            templateFile: templateFile,
             studentName: receipt.studentName,
             enrollmentNo: receipt.rollNumber,
-            receiptData: receipt.context
+            studentData: receipt.context // This context is key
           });
-          
-          // Small delay between downloads
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 500)); 
         }
-
         toast({
-          title: "Word Receipts Generated",
-          description: `Successfully generated ${receipts.length} Word receipts using your template!`,
+          title: "DOCX Receipts Generated",
+          description: `Successfully generated and downloaded ${receipts.length} Word receipts.`,
         });
       } catch (error) {
-        console.error('Word template processing failed:', error);
+        console.error('Word template processing loop failed:', error);
         toast({
-          title: "Template Processing Failed",
-          description: "Falling back to HTML receipts. Please check your template format.",
+          title: "DOCX Processing Failed",
+          description: `Could not generate all Word receipts: ${(error as Error).message}. Falling back to PDF from HTML.`,
           variant: "destructive",
         });
-        
-        // Fallback to HTML
-        receipts.forEach((receipt) => {
-          downloadReceiptAsHTML({
-            studentName: receipt.studentName,
-            enrollmentNo: receipt.rollNumber,
-            receiptData: receipt.context
-          });
-        });
+        for (const receipt of receipts) {
+          try {
+            await downloadReceiptAsPDFFromHTML({
+              studentName: receipt.studentName,
+              enrollmentNo: receipt.rollNumber,
+              receiptData: receipt.context // Pass context here too
+            });
+            await new Promise(resolve => setTimeout(resolve, 300)); 
+          } catch (pdfError) {
+            console.error(`Failed to generate PDF for ${receipt.studentName}`, pdfError);
+            toast({ title: "PDF Generation Error", description: `Could not generate PDF for ${receipt.studentName}.`, variant: "destructive"});
+          }
+        }
       }
     } else {
-      // No template, use HTML fallback
-      receipts.forEach((receipt) => {
-        downloadReceiptAsHTML({
-          studentName: receipt.studentName,
-          enrollmentNo: receipt.rollNumber,
-          receiptData: receipt.context
-        });
-      });
-
       toast({
-        title: "HTML Receipts Downloaded",
-        description: `Downloaded ${receipts.length} HTML receipts. Upload a Word template for formatted receipts.`,
+        title: "Processing PDF Receipts",
+        description: `Generating ${receipts.length} PDF receipts from HTML...`,
+      });
+      for (const receipt of receipts) {
+        try {
+            await downloadReceiptAsPDFFromHTML({
+            studentName: receipt.studentName,
+            enrollmentNo: receipt.rollNumber,
+            receiptData: receipt.context // And here
+            });
+            await new Promise(resolve => setTimeout(resolve, 300));
+        } catch (pdfError) {
+            console.error(`Failed to generate PDF for ${receipt.studentName}`, pdfError);
+            toast({ title: "PDF Generation Error", description: `Could not generate PDF for ${receipt.studentName}.`, variant: "destructive"});
+        }
+      }
+      toast({
+        title: "PDF Receipts Downloaded",
+        description: `Attempted to download ${receipts.length} PDF receipts.`,
       });
     }
   };
@@ -385,26 +510,29 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     try {
       for (const receipt of pendingReceipts) {
-        await sendReceiptEmail(receipt.email, receipt.studentName, receipt.context);
-        
-        // Update receipt status
-        setReceipts(prev => prev.map(r => 
-          r.id === receipt.id ? { ...r, sentStatus: true } : r
-        ));
-        
-        // Small delay between emails
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Ensure receipt.email is valid and receipt.context is populated
+        if (receipt.email && receipt.context) {
+          await sendReceiptEmail(receipt.email, receipt.studentName, receipt.context);
+          
+          setReceipts(prev => prev.map(r => 
+            r.id === receipt.id ? { ...r, sentStatus: true } : r
+          ));
+          
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } else {
+          console.warn(`Skipping email for ${receipt.studentName} due to missing email or context.`);
+        }
       }
       
       toast({
         title: "Emails Sent Successfully",
-        description: `All ${pendingReceipts.length} emails have been delivered.`,
+        description: `Attempted to deliver ${pendingReceipts.length} emails.`,
       });
     } catch (error) {
       console.error('Email sending failed:', error);
       toast({
         title: "Email Sending Failed",
-        description: "Some emails could not be sent. Please check your email configuration.",
+        description: "Some emails could not be sent. Please check your email configuration and data.",
         variant: "destructive",
       });
     }
@@ -508,22 +636,22 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
             </CardHeader>
             <CardContent>
               <div className="bg-red-50 p-4 rounded-lg">
-                <p className="text-red-700 mb-2">Your Excel file is missing the following required fields:</p>
+                <p className="text-red-700 mb-2">Your Excel file is missing the following required fields or they could not be matched:</p>
                 <ul className="list-disc list-inside text-red-600 text-sm space-y-1">
                   {validationErrors.map((field, index) => (
                     <li key={index}>{field}</li>
                   ))}
                 </ul>
                 <p className="text-red-700 text-sm mt-3">
-                  Please ensure your Excel file contains all these exact column headers before proceeding.
+                  Please ensure your Excel file contains all these column headers (case-insensitive, variations like spaces around name might be okay, but exact names are best).
                 </p>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Data Preview */}
-        {studentData.length > 0 && (
+        {/* Data Preview - Show only if data is present AND no validation errors */}
+        {studentData.length > 0 && validationErrors.length === 0 && (
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>Data Preview</CardTitle>
@@ -531,7 +659,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
             <CardContent>
               <div className="bg-green-50 p-4 rounded-lg">
                 <h4 className="font-semibold text-green-900 mb-2">
-                  ✅ Found {studentData.length} students with all required fields
+                  ✅ Found {studentData.length} students with all required fields mapped.
                 </h4>
                 <div className="text-sm text-green-700">
                   <p>Sample: {studentData[0]?.['NAME OF THE STUDENT']} - {studentData[0]?.['YEAR & COURSE']}</p>
@@ -567,6 +695,11 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     description="Upload your receipt template (.docx)"
                     acceptedTypes=".docx"
                     onFileUpload={(file) => handleFileUpload({ template: file })}
+                    onFileRemove={async () => {
+                      setUploadedFiles(prev => ({ ...prev, template: null }));
+                      const { setTemplate } = await import('@/utils/receiptStorage');
+                      setTemplate(null);
+                    }}
                     uploadedFile={uploadedFiles.template}
                   />
                   <FileUploadZone
@@ -574,21 +707,35 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     description="Upload student data with ALL required template fields (.xlsx, .csv)"
                     acceptedTypes=".xlsx,.csv"
                     onFileUpload={(file) => handleFileUpload({ dataSheet: file })}
+                    onFileRemove={() => {
+                      setUploadedFiles(prev => ({ ...prev, dataSheet: null }));
+                      setStudentData([]); // Clear student data
+                      setValidationErrors([]); // Clear validation errors
+                      setReceipts([]); // Clear generated receipts
+                      setGenerationProgress(0); // Reset progress
+                    }}
                     uploadedFile={uploadedFiles.dataSheet}
                   />
                 </div>
 
-                {/* Generate Button - Show when both files are uploaded and data is valid */}
-                {uploadedFiles.template && uploadedFiles.dataSheet && (
+                {uploadedFiles.dataSheet && (
                   <div className="bg-blue-50 p-6 rounded-lg">
                     <h3 className="font-semibold text-blue-900 mb-4">
-                      {studentData.length > 0 ? 'Ready to Generate' : 'Processing Files...'}
+                      {studentData.length > 0 && validationErrors.length === 0 ? 'Ready to Generate' : 
+                       validationErrors.length > 0 ? 'File Issues Detected' : 'Processing Files...'}
                     </h3>
                     
                     {studentData.length > 0 && validationErrors.length === 0 && (
                       <div className="mb-4 p-3 bg-green-100 rounded-lg">
                         <p className="text-green-800 text-sm">
-                          ✅ Found {studentData.length} student records with all required template fields
+                          ✅ Found {studentData.length} student records with all required template fields mapped.
+                        </p>
+                      </div>
+                    )}
+                     {validationErrors.length > 0 && (
+                      <div className="mb-4 p-3 bg-red-100 rounded-lg">
+                        <p className="text-red-800 text-sm">
+                          ❌ Please fix the {validationErrors.length} validation error(s) listed above before generating.
                         </p>
                       </div>
                     )}
@@ -610,15 +757,17 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         <FileText className="h-4 w-4 mr-2" />
-                        {studentData.length > 0 
+                        {studentData.length > 0 && validationErrors.length === 0 
                           ? `Generate ${studentData.length} Receipts` 
                           : 'Generate Receipts'
                         }
                       </Button>
 
-                      {generationProgress === 100 && receipts.length > 0 && (
+                      {receipts.length > 0 && !isGenerating && ( // Show only after generation is complete
                         <>
-                          <Button onClick={handleSendEmails} className="bg-green-600 hover:bg-green-700">
+                          <Button onClick={handleSendEmails} className="bg-green-600 hover:bg-green-700"
+                            disabled={receipts.filter(r => !r.sentStatus && r.email).length === 0}
+                          >
                             <Mail className="h-4 w-4 mr-2" />
                             Send All Emails ({receipts.filter(r => !r.sentStatus && r.email).length})
                           </Button>
@@ -648,11 +797,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           onClick={() => receipts.length > 0 && handlePreviewReceipt(receipts[0])}
                           variant="outline"
                           size="sm"
+                          disabled={!receipts.length}
                         >
                           <Eye className="h-4 w-4 mr-2" />
-                          Preview Sample
+                          Preview Sample ({uploadedFiles.template ? 'DOCX' : 'HTML/PDF'})
                         </Button>
-                        <Button onClick={handleDownloadAll} variant="outline" size="sm">
+                        <Button onClick={handleDownloadAll} variant="outline" size="sm" disabled={!receipts.length}>
                           <FolderOpen className="h-4 w-4 mr-2" />
                           Save All to Folder
                         </Button>
@@ -666,6 +816,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 receipts={receipts} 
                 onDelete={handleDeleteReceipt}
                 onPreview={handlePreviewReceipt}
+                isTemplateUploaded={!!uploadedFiles.template}
               />
             </div>
           </TabsContent>
@@ -679,15 +830,15 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 <div className="space-y-4">
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <h4 className="font-semibold mb-2">Email Configuration</h4>
-                    <p className="text-sm text-gray-600">Configure SMTP settings for email delivery</p>
+                    <p className="text-sm text-gray-600">Configure SMTP settings for email delivery (placeholder).</p>
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <h4 className="font-semibold mb-2">Template Settings</h4>
-                    <p className="text-sm text-gray-600">Manage default templates and formatting</p>
+                    <p className="text-sm text-gray-600">Manage default templates and formatting (placeholder).</p>
                   </div>
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <h4 className="font-semibold mb-2">Security Settings</h4>
-                    <p className="text-sm text-gray-600">Configure access controls and permissions</p>
+                    <p className="text-sm text-gray-600">Configure access controls and permissions (placeholder).</p>
                   </div>
                 </div>
               </CardContent>
@@ -696,9 +847,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         </Tabs>
       </main>
 
-      {/* Receipt Preview Dialog */}
       <ReceiptPreviewDialog
-        isOpen={isPreviewOpen}
+        isOpen={isPreviewOpen && !uploadedFiles.template} 
         onClose={() => setIsPreviewOpen(false)}
         receipt={previewReceipt}
       />

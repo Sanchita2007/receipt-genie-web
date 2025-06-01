@@ -1,28 +1,32 @@
-import { processWordTemplate, downloadWordReceipt } from './wordTemplateProcessor';
+// import { processWordTemplate, downloadWordReceipt } from './wordTemplateProcessor'; // This line is no longer needed here
+import html2pdf from 'html2pdf.js';
 
 export interface ReceiptStorageOptions {
   studentName: string;
   enrollmentNo: string;
   receiptData: any;
-  storageLocation?: string;
+  storageLocation?: string; // This was never fully implemented for web, can be kept or removed
 }
 
 // This will store the uploaded template for processing
-let uploadedTemplate: File | null = null;
+let uploadedTemplateFile: File | null = null;
 
-export const setTemplate = (template: File) => {
-  uploadedTemplate = template;
-  console.log('Template set:', template.name);
+export const setTemplate = (template: File | null) => {
+  uploadedTemplateFile = template;
+  if (template) {
+    console.log('Template set in receiptStorage:', template.name);
+  } else {
+    console.log('Template cleared in receiptStorage.');
+  }
 };
 
 export const getTemplate = (): File | null => {
-  return uploadedTemplate;
+  return uploadedTemplateFile;
 };
 
-// Generate HTML receipt (keeping as fallback)
+// Generate HTML receipt (remains as fallback)
 export const generateReceiptHTML = (context: any): string => {
-  // If we have a template, we should process it with the data
-  // For now, we'll create a more detailed HTML that matches typical receipt format
+  // ... (HTML generation code remains exactly the same as before)
   return `
     <!DOCTYPE html>
     <html>
@@ -223,54 +227,49 @@ export const generateReceiptHTML = (context: any): string => {
   `;
 };
 
-// Main function to download receipt using Word template
-export const downloadReceiptAsWord = async (options: ReceiptStorageOptions) => {
+// Function to download receipt as PDF generated from HTML (fallback)
+export const downloadReceiptAsPDFFromHTML = async (options: ReceiptStorageOptions): Promise<void> => {
   const { studentName, enrollmentNo, receiptData } = options;
+  const htmlContent = generateReceiptHTML(receiptData);
   
-  if (!uploadedTemplate) {
-    throw new Error('No Word template uploaded. Please upload a template first.');
-  }
-  
+  const element = document.createElement('div');
+  element.innerHTML = htmlContent; 
+
+  const opt = {
+    margin:       0.5,
+    filename:     `Receipt_${studentName.replace(/\s+/g, '_')}_${enrollmentNo}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true, logging: false },
+    jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+  };
+
   try {
-    console.log('Processing Word template with data:', receiptData);
-    
-    const wordBlob = await processWordTemplate({
-      templateFile: uploadedTemplate,
-      studentData: receiptData,
-      studentName: studentName
-    });
-    
-    downloadWordReceipt(wordBlob, studentName, enrollmentNo);
-    
+    await html2pdf().from(element).set(opt).save();
   } catch (error) {
-    console.error('Error generating Word receipt:', error);
-    throw error;
+    console.error("Error generating PDF from HTML:", error);
+    throw new Error("Failed to generate PDF from HTML.");
   }
 };
 
-// Fallback HTML download function
+
+// downloadReceiptAsHTML can be kept if direct HTML file download is ever needed, or removed.
 export const downloadReceiptAsHTML = (options: ReceiptStorageOptions) => {
   const { studentName, enrollmentNo, receiptData } = options;
   const htmlContent = generateReceiptHTML(receiptData);
   
-  // Create a blob with the HTML content
   const blob = new Blob([htmlContent], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   
-  // Create download link
   const link = document.createElement('a');
   link.href = url;
   link.download = `Receipt_${studentName.replace(/\s+/g, '_')}_${enrollmentNo}.html`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  
-  // Clean up
   URL.revokeObjectURL(url);
 };
 
+
 export const selectStorageFolder = async (): Promise<string | null> => {
-  // For web applications, we can't directly select folders
-  // We'll provide a download option instead
-  return null;
+  return null; // Not applicable for web direct folder selection
 };
