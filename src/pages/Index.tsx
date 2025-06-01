@@ -54,7 +54,7 @@ const Index = () => {
             </div>
             <div className="flex items-center space-x-4">
               <Button variant="ghost" onClick={() => navigate('/about')}>
-                <Info className="h-4 w-4 mr-2" />
+                
                 About
               </Button>
             </div>
