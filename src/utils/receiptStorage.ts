@@ -1,3 +1,4 @@
+import { processWordTemplate, downloadWordReceipt } from './wordTemplateProcessor';
 
 export interface ReceiptStorageOptions {
   studentName: string;
@@ -11,8 +12,14 @@ let uploadedTemplate: File | null = null;
 
 export const setTemplate = (template: File) => {
   uploadedTemplate = template;
+  console.log('Template set:', template.name);
 };
 
+export const getTemplate = (): File | null => {
+  return uploadedTemplate;
+};
+
+// Generate HTML receipt (keeping as fallback)
 export const generateReceiptHTML = (context: any): string => {
   // If we have a template, we should process it with the data
   // For now, we'll create a more detailed HTML that matches typical receipt format
@@ -216,6 +223,32 @@ export const generateReceiptHTML = (context: any): string => {
   `;
 };
 
+// Main function to download receipt using Word template
+export const downloadReceiptAsWord = async (options: ReceiptStorageOptions) => {
+  const { studentName, enrollmentNo, receiptData } = options;
+  
+  if (!uploadedTemplate) {
+    throw new Error('No Word template uploaded. Please upload a template first.');
+  }
+  
+  try {
+    console.log('Processing Word template with data:', receiptData);
+    
+    const wordBlob = await processWordTemplate({
+      templateFile: uploadedTemplate,
+      studentData: receiptData,
+      studentName: studentName
+    });
+    
+    downloadWordReceipt(wordBlob, studentName, enrollmentNo);
+    
+  } catch (error) {
+    console.error('Error generating Word receipt:', error);
+    throw error;
+  }
+};
+
+// Fallback HTML download function
 export const downloadReceiptAsHTML = (options: ReceiptStorageOptions) => {
   const { studentName, enrollmentNo, receiptData } = options;
   const htmlContent = generateReceiptHTML(receiptData);

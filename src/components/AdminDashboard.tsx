@@ -297,7 +297,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     setIsPreviewOpen(true);
   };
 
-  const handleDownloadAll = () => {
+  const handleDownloadAll = async () => {
     if (receipts.length === 0) {
       toast({
         title: "No Receipts",
@@ -307,18 +307,64 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       return;
     }
 
-    receipts.forEach((receipt) => {
-      downloadReceiptAsHTML({
-        studentName: receipt.studentName,
-        enrollmentNo: receipt.rollNumber,
-        receiptData: receipt.context
-      });
-    });
+    const { getTemplate, downloadReceiptAsWord, downloadReceiptAsHTML } = await import('@/utils/receiptStorage');
+    const template = getTemplate();
 
-    toast({
-      title: "Bulk Download Started",
-      description: `Downloading ${receipts.length} receipts to your default downloads folder.`,
-    });
+    if (template) {
+      // Use Word template processing
+      toast({
+        title: "Processing Word Templates",
+        description: `Generating ${receipts.length} receipts using your Word template...`,
+      });
+
+      try {
+        for (const receipt of receipts) {
+          await downloadReceiptAsWord({
+            studentName: receipt.studentName,
+            enrollmentNo: receipt.rollNumber,
+            receiptData: receipt.context
+          });
+          
+          // Small delay between downloads
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        toast({
+          title: "Word Receipts Generated",
+          description: `Successfully generated ${receipts.length} Word receipts using your template!`,
+        });
+      } catch (error) {
+        console.error('Word template processing failed:', error);
+        toast({
+          title: "Template Processing Failed",
+          description: "Falling back to HTML receipts. Please check your template format.",
+          variant: "destructive",
+        });
+        
+        // Fallback to HTML
+        receipts.forEach((receipt) => {
+          downloadReceiptAsHTML({
+            studentName: receipt.studentName,
+            enrollmentNo: receipt.rollNumber,
+            receiptData: receipt.context
+          });
+        });
+      }
+    } else {
+      // No template, use HTML fallback
+      receipts.forEach((receipt) => {
+        downloadReceiptAsHTML({
+          studentName: receipt.studentName,
+          enrollmentNo: receipt.rollNumber,
+          receiptData: receipt.context
+        });
+      });
+
+      toast({
+        title: "HTML Receipts Downloaded",
+        description: `Downloaded ${receipts.length} HTML receipts. Upload a Word template for formatted receipts.`,
+      });
+    }
   };
 
   const handleSendEmails = async () => {
