@@ -1,42 +1,79 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { GraduationCap, Shield, Upload, Mail, FileText, Users, Info } from 'lucide-react';
+// import { Badge } from '@/components/ui/badge'; // Badge seems unused here
+import { GraduationCap, Shield, Upload, Mail, FileText, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AdminDashboard from '@/components/AdminDashboard';
 import StudentPortal from '@/components/StudentPortal';
 import LoginForm from '@/components/LoginForm';
+import { supabase } from '@/supabaseClient'; // Import Supabase
+import { Session } from '@supabase/supabase-js'; // Import Session type
+
+const USER_ROLE_KEY = 'appUserRole';
 
 const Index = () => {
   const navigate = useNavigate();
+  const [session, setSession] = useState<Session | null>(null);
   const [userRole, setUserRole] = useState<'admin' | 'student' | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [studentEmail, setStudentEmail] = useState<string>('');
 
-  const handleLogin = (role: 'admin' | 'student', email?: string) => {
+  useEffect(() => {
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      if (currentSession) {
+        const storedRole = localStorage.getItem(USER_ROLE_KEY) as 'admin' | 'student' | null;
+        setUserRole(storedRole); 
+      } else {
+        localStorage.removeItem(USER_ROLE_KEY); 
+        setUserRole(null);
+      }
+    });
+
+    // Listen for auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      if (newSession) {
+        // Only set role if it's already determined by a direct login action.
+        // If localStorage has a role, use it. Otherwise, role remains null until next login.
+        const storedRole = localStorage.getItem(USER_ROLE_KEY) as 'admin' | 'student' | null;
+        setUserRole(storedRole);
+      } else {
+        localStorage.removeItem(USER_ROLE_KEY);
+        setUserRole(null);
+      }
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogin = (role: 'admin' | 'student', _email: string, _userId: string) => {
+    // Supabase handles session, onAuthStateChange will update `session`
+    // We just need to set the role and persist it for refresh scenarios
     setUserRole(role);
-    setIsLoggedIn(true);
-    if (role === 'student' && email) {
-      setStudentEmail(email);
-    }
+    localStorage.setItem(USER_ROLE_KEY, role);
   };
 
-  const handleLogout = () => {
-    setUserRole(null);
-    setIsLoggedIn(false);
-    setStudentEmail('');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    // onAuthStateChange will handle setting session to null
+    localStorage.removeItem(USER_ROLE_KEY);
+    setUserRole(null); 
   };
+  
+  const isLoggedIn = !!session; 
+  const currentStudentEmail = session?.user?.email;
 
-  if (isLoggedIn && userRole) {
+  if (isLoggedIn && userRole && currentStudentEmail) {
     return userRole === 'admin' ? (
       <AdminDashboard onLogout={handleLogout} />
     ) : (
-      <StudentPortal onLogout={handleLogout} studentEmail={studentEmail} />
+      <StudentPortal onLogout={handleLogout} studentEmail={currentStudentEmail} />
     );
   }
-
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
@@ -54,7 +91,6 @@ const Index = () => {
             </div>
             <div className="flex items-center space-x-4">
               <Button variant="ghost" onClick={() => navigate('/about')}>
-                
                 About
               </Button>
             </div>
@@ -138,7 +174,7 @@ const Index = () => {
                       <li>• Receipt management & deletion</li>
                     </ul>
                   </div>
-                  <LoginForm role="admin" onLogin={(role) => handleLogin(role)} />
+                  <LoginForm role="admin" onLogin={(role, email, userId) => handleLogin(role, email, userId)} />
                 </div>
               </CardContent>
             </Card>
@@ -165,7 +201,7 @@ const Index = () => {
                       <li>• Mobile-friendly interface</li>
                     </ul>
                   </div>
-                  <LoginForm role="student" onLogin={(role, email) => handleLogin(role, email)} />
+                  <LoginForm role="student" onLogin={(role, email, userId) => handleLogin(role, email, userId)} />
                 </div>
               </CardContent>
             </Card>
@@ -175,10 +211,9 @@ const Index = () => {
         {/* Footer Info */}
         <div className="mt-16 text-center">
           <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 max-w-2xl mx-auto">
-            <h3 className="font-semibold text-gray-900 mb-2">System Requirements</h3>
+            <h3 className="font-semibold text-gray-900 mb-2">System Notes</h3>
             <p className="text-gray-600 text-sm">
-              Supports .docx templates and .xlsx data files. Generates PDFs with automated email delivery. 
-              Secure role-based access for administrators and students.
+              Utilizes Supabase for user authentication. Supports .docx templates and Excel/CSV data. Generates PDFs and enables automated email delivery.
             </p>
           </div>
         </div>

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,10 +5,11 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
+import { supabase } from '@/supabaseClient'; // Import Supabase client
 
 interface LoginFormProps {
   role: 'admin' | 'student';
-  onLogin: (role: 'admin' | 'student', email?: string) => void;
+  onLogin: (role: 'admin' | 'student', email: string, userId: string) => void; // Added userId
 }
 
 const LoginForm = ({ role, onLogin }: LoginFormProps) => {
@@ -24,35 +24,47 @@ const LoginForm = ({ role, onLogin }: LoginFormProps) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate login process
-    setTimeout(() => {
-      if (credentials.email && credentials.password) {
-        toast({
-          title: "Login Successful",
-          description: `Welcome to the ${role} portal!`,
-        });
-        onLogin(role, credentials.email);
-      } else {
-        toast({
-          title: "Login Failed",
-          description: "Please enter valid credentials",
-          variant: "destructive",
-        });
-      }
-      setIsLoading(false);
-    }, 1000);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password,
+    });
+
+    setIsLoading(false);
+
+    if (error) {
+      toast({
+        title: "Login Failed",
+        description: error.message || "Please enter valid credentials",
+        variant: "destructive",
+      });
+    } else if (data.user) {
+      toast({
+        title: "Login Successful",
+        description: `Welcome to the ${role} portal!`,
+      });
+      onLogin(role, data.user.email!, data.user.id); // Pass email and id
+    } else {
+      // Should not happen if no error and no user, but as a fallback
+      toast({
+        title: "Login Failed",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDemoLogin = () => {
+    // This only fills the form. Actual login must go through Supabase.
+    // Ensure these demo users exist in your Supabase auth.users table.
     const demoCredentials = {
-      email: role === 'admin' ? 'admin@university.edu' : 'student@university.edu',
-      password: 'demo123'
+      email: role === 'admin' ? 'admin@example.com' : 'student@example.com', // Use placeholder emails
+      password: 'password123' // Use a common demo password
     };
     
     setCredentials(demoCredentials);
     toast({
       title: "Demo Credentials Filled",
-      description: "Click Sign In to continue with demo access",
+      description: "Click Sign In to attempt login. Ensure users exist in Supabase.",
     });
   };
 
@@ -66,11 +78,12 @@ const LoginForm = ({ role, onLogin }: LoginFormProps) => {
           <Input
             id={`${role}-email`}
             type="email"
-            placeholder={role === 'admin' ? 'admin@university.edu' : 'your.email@university.edu'}
+            placeholder={role === 'admin' ? 'admin@example.com' : 'your.email@example.com'}
             value={credentials.email}
             onChange={(e) => setCredentials({ ...credentials, email: e.target.value })}
             className="w-full"
             required
+            autoComplete="email"
           />
         </div>
 
@@ -85,6 +98,7 @@ const LoginForm = ({ role, onLogin }: LoginFormProps) => {
               onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
               className="w-full pr-10"
               required
+              autoComplete="current-password"
             />
             <Button
               type="button"
