@@ -1,9 +1,10 @@
+// src/components/ReceiptList.tsx
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { 
+import {
   Table,
   TableBody,
   TableCell,
@@ -11,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { 
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -22,32 +23,39 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { 
-  Search, 
-  Trash2, 
-  Download, 
-  Mail, 
+import {
+  Search,
+  Trash2,
+  Download,
+  Mail,
   Eye,
   CheckCircle,
   XCircle
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast'; // Import toast
 
-interface Receipt {
+
+// Update Receipt interface to match the one in AdminDashboard or pass specific fields
+interface ReceiptForList { // Simplified for list props if needed, or use full Receipt
   id: number;
   studentName: string;
   email: string;
-  rollNumber: string;
-  status: string;
+  payOrderNo: string; // Key identifier
+  status: string; // 'completed', 'failed', 'uploading' etc.
   sentStatus: boolean;
   generatedAt: string;
-  context: any;
+  storagePath?: string;
+  uploadError?: string;
+  // Add any other fields from AdminDashboard's Receipt type that are needed here
+  docxContext: any; // For on-the-fly preview if storagePath is missing
+  studentEnrollmentId: string; // If needed for display/actions
+  userId?: string;
 }
 
 interface ReceiptListProps {
-  receipts: Receipt[];
-  onDelete: (id: number) => void;
-  onPreview: (receipt: Receipt) => void;
+  receipts: ReceiptForList[];
+  onDelete: (receipt: ReceiptForList) => void; // Pass the whole receipt object
+  onPreview: (receipt: ReceiptForList) => void;
   isTemplateUploaded: boolean;
 }
 
@@ -55,53 +63,9 @@ const ReceiptList = ({ receipts, onDelete, onPreview, isTemplateUploaded }: Rece
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReceipts, setSelectedReceipts] = useState<number[]>([]);
 
-  const handleDownloadSingleReceipt = async (receipt: Receipt) => {
-    const { downloadReceiptAsPDFFromHTML, getTemplate } = await import('@/utils/receiptStorage');
-    const { processAndDownloadWordTemplateWithDocxtemplater } = await import('@/utils/wordTemplateProcessor');
-    
-    const templateFile = getTemplate(); // Get the actual template File object
-
-    const optionsForDocxtemplater = { 
-        templateFile: templateFile!, // Assert non-null if isTemplateUploaded is true
-        studentName: receipt.studentName, 
-        enrollmentNo: receipt.rollNumber, 
-        studentData: receipt.context 
-    };
-    const optionsForPDF = {
-        studentName: receipt.studentName, 
-        enrollmentNo: receipt.rollNumber, 
-        receiptData: receipt.context 
-    }
-
-    try {
-        if (isTemplateUploaded && templateFile) { // Check if templateFile is actually available
-            await processAndDownloadWordTemplateWithDocxtemplater(optionsForDocxtemplater);
-            toast({ title: "DOCX Downloaded", description: `Receipt for ${receipt.studentName} downloaded as DOCX.` });
-        } else {
-            if (!isTemplateUploaded) {
-              console.warn("Template not uploaded, falling back to PDF for single download.");
-            }
-            if (isTemplateUploaded && !templateFile) {
-              console.warn("isTemplateUploaded is true, but templateFile is null. Falling back to PDF.");
-            }
-            await downloadReceiptAsPDFFromHTML(optionsForPDF);
-            toast({ title: "PDF Downloaded", description: `Receipt for ${receipt.studentName} downloaded as PDF.` });
-        }
-    } catch (error) {
-        toast({ title: "Download Error", description: `Could not download receipt: ${(error as Error).message}`, variant: "destructive" });
-        console.error("Download error for single receipt:", error);
-    }
-  };
-
-  const filteredReceipts = receipts.filter(receipt =>
-    receipt.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    receipt.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    receipt.rollNumber.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const handleSelectReceipt = (id: number) => {
-    setSelectedReceipts(prev => 
-      prev.includes(id) 
+    setSelectedReceipts(prev =>
+      prev.includes(id)
         ? prev.filter(receiptId => receiptId !== id)
         : [...prev, id]
     );
@@ -114,6 +78,17 @@ const ReceiptList = ({ receipts, onDelete, onPreview, isTemplateUploaded }: Rece
       setSelectedReceipts(filteredReceipts.map(receipt => receipt.id));
     }
   };
+  // ... (rest of the component, selectedReceipts logic can remain)
+
+  // handleDownloadSingleReceipt is now effectively handlePreview
+  // The actual download logic is in AdminDashboard's handlePreviewReceipt
+
+  const filteredReceipts = receipts.filter(receipt =>
+    receipt.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    receipt.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    receipt.payOrderNo.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
 
   return (
     <Card>
@@ -137,7 +112,7 @@ const ReceiptList = ({ receipts, onDelete, onPreview, isTemplateUploaded }: Rece
               className="pl-10"
             />
           </div>
-          
+
           {selectedReceipts.length > 0 && (
             <div className="flex space-x-2">
               <Button variant="outline" size="sm">
@@ -152,7 +127,7 @@ const ReceiptList = ({ receipts, onDelete, onPreview, isTemplateUploaded }: Rece
           )}
         </div>
 
-        {/* Receipt Table */}
+
         <div className="border rounded-lg">
           <Table>
             <TableHeader>
@@ -186,24 +161,29 @@ const ReceiptList = ({ receipts, onDelete, onPreview, isTemplateUploaded }: Rece
                   </TableCell>
                   <TableCell className="font-medium">{receipt.studentName}</TableCell>
                   <TableCell>{receipt.email}</TableCell>
-                  <TableCell>{receipt.rollNumber}</TableCell>
+                  <TableCell>{receipt.payOrderNo}</TableCell> {/* Use payOrderNo or studentEnrollmentId */}
                   <TableCell>
-                    <div className="flex items-center space-x-2">
-                      {receipt.sentStatus ? (
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-red-600" />
-                      )}
-                      <Badge variant={receipt.sentStatus ? "default" : "secondary"}>
-                        {receipt.sentStatus ? 'Sent' : 'Pending'}
-                      </Badge>
-                    </div>
+                    <Badge variant={
+                      receipt.status === 'completed' ? 'default' :
+                        receipt.status === 'failed' ? 'destructive' :
+                          'secondary'
+                    } className={
+                      receipt.status === 'completed' ? 'bg-green-600' :
+                        receipt.status === 'failed' ? 'bg-red-600' : ''
+                    }>
+                      {receipt.status}
+                    </Badge>
+                    {receipt.status === 'failed' && receipt.uploadError && (
+                      <p className="text-xs text-red-500 truncate" title={receipt.uploadError}>
+                        {receipt.uploadError.substring(0, 30)}...
+                      </p>
+                    )}
                   </TableCell>
-                  <TableCell>{receipt.generatedAt}</TableCell>
+                  <TableCell>{new Date(receipt.generatedAt).toLocaleDateString()}</TableCell>
                   <TableCell>
-                    <div className="flex items-center justify-end space-x-2">
-                      <Button variant="ghost" size="sm" onClick={() => onPreview(receipt)}>
-                        <Eye className="h-4 w-4" />
+                    <div className="flex items-center justify-end space-x-1">
+                      <Button variant="ghost" size="sm" title="Download/Preview DOCX" onClick={() => onPreview(receipt)}>
+                        <Download className="h-4 w-4" /> {/* Changed Icon to Download for clarity */}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => handleDownloadSingleReceipt(receipt)}>
                         <Download className="h-4 w-4" />
@@ -223,17 +203,16 @@ const ReceiptList = ({ receipts, onDelete, onPreview, isTemplateUploaded }: Rece
                           <AlertDialogHeader>
                             <AlertDialogTitle>Delete Receipt</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Are you sure you want to delete the receipt for {receipt.studentName}? 
-                              This action cannot be undone and the student will no longer be able to access this receipt.
+                              Permanently delete receipt for {receipt.studentName} (PO: {receipt.payOrderNo})? This includes deleting from Supabase.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => onDelete(receipt.id)}
+                            <AlertDialogAction
+                              onClick={() => onDelete(receipt)} // Pass the full receipt object
                               className="bg-red-600 hover:bg-red-700"
                             >
-                              Delete Receipt
+                              Delete
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>

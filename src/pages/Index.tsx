@@ -70,7 +70,7 @@ const Index = () => {
     return userRole === 'admin' ? (
       <AdminDashboard onLogout={handleLogout} />
     ) : (
-      <StudentPortal onLogout={handleLogout} studentEmail={currentStudentEmail} />
+      <StudentPortal onLogout={handleLogout} studentEmail={currentStudentEmail} session={session} />
     );
   }
   

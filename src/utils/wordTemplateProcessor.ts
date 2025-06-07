@@ -1,15 +1,14 @@
+// src/utils/wordTemplateProcessor.ts
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
-import { saveAs } from 'file-saver'; // For downloading
+// Remove: import { saveAs } from 'file-saver';
 
 export interface WordTemplateProcessorOptions {
   templateFile: File;
   studentData: any; // This is the 'context' object from AdminDashboard
-  studentName: string;
-  enrollmentNo: string; // Needed for filename
+  // studentName and enrollmentNo are not needed here if not used for filename generation inside this func
 }
 
-// Helper function to load a file as ArrayBuffer
 const loadFileAsArrayBuffer = (file: File): Promise<ArrayBuffer> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -27,10 +26,10 @@ const loadFileAsArrayBuffer = (file: File): Promise<ArrayBuffer> => {
   });
 };
 
-export const processAndDownloadWordTemplateWithDocxtemplater = async (
+export const processWordTemplate = async (
   options: WordTemplateProcessorOptions
-): Promise<void> => {
-  const { templateFile, studentData, studentName, enrollmentNo } = options;
+): Promise<Blob> => { // Changed return type
+  const { templateFile, studentData } = options;
 
   try {
     console.log('Loading template file for docxtemplater...');
@@ -40,10 +39,9 @@ export const processAndDownloadWordTemplateWithDocxtemplater = async (
     const zip = new PizZip(content);
     console.log('PizZip instance created.');
     
-    // Crucial: Set delimiters to match your template {{placeholder}}
     const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
-        linebreaks: true, // Handles \n in data -> <w:br/> in Word
+        linebreaks: true,
         delimiters: {
             start: '{{',
             end: '}}',
@@ -56,11 +54,10 @@ export const processAndDownloadWordTemplateWithDocxtemplater = async (
 
     try {
       console.log('Rendering document...');
-      doc.render(); // Render the document (replace placeholders)
+      doc.render();
       console.log('Document rendered.');
     } catch (renderError: any) {
       console.error('Error rendering document with docxtemplater:', renderError);
-      // Log detailed errors if available (often in renderError.properties.errors)
       if (renderError.properties && renderError.properties.errors) {
         renderError.properties.errors.forEach((err: any) => {
           console.error('Detailed render error:', err.stack || err);
@@ -76,16 +73,11 @@ export const processAndDownloadWordTemplateWithDocxtemplater = async (
     });
     console.log('Output blob generated.');
 
-    // Use file-saver to trigger download
-    const filename = `Receipt_${studentName.replace(/\s+/g, '_')}_${enrollmentNo}.docx`;
-    saveAs(outBlob, filename);
-    console.log(`File ${filename} download triggered.`);
+    return outBlob; // Return the blob
 
   } catch (error) {
-    console.error(`Error in processAndDownloadWordTemplateWithDocxtemplater for ${studentName}:`, error);
+    console.error(`Error in processWordTemplate:`, error);
     const errorMessage = (error instanceof Error) ? error.message : String(error);
-    // Re-throw the error so it can be caught by the calling function (e.g., in AdminDashboard)
-    // and potentially shown to the user via a toast.
     throw new Error(`Failed to process Word template: ${errorMessage}`);
   }
 };

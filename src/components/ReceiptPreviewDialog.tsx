@@ -14,56 +14,71 @@ interface ReceiptPreviewDialogProps {
   } | null;
 }
 
-const ReceiptPreviewDialog = ({ isOpen, onClose, receipt }: ReceiptPreviewDialogProps) => {
+const ReceiptPreviewDialog = ({ 
+    isOpen, 
+    onClose, 
+    receipt, 
+    onDownloadDocx,
+    isDocxPreview = false
+  }: ReceiptPreviewDialogProps) => {
   if (!receipt) return null;
 
   const handleDownload = async () => {
     if (!receipt) return;
-    try {
-      await downloadReceiptAsPDFFromHTML({ // Use PDF from HTML for this dialog's download
-        studentName: receipt.studentName,
-        enrollmentNo: receipt.rollNumber,
-        receiptData: receipt.context
-      });
+    if (isDocxPreview && onDownloadDocx) {
+      try {
+        await onDownloadDocx();
+        toast({
+          title: "DOCX Downloaded",
+          description: `Receipt for ${receipt.studentName} downloaded as DOCX.`
+        });
+      } catch (error) {
+         console.error("Error downloading DOCX:", error);
+         toast({
+             title: "Download Error",
+             description: "Could not generate DOCX for download.",
+             variant: "destructive"
+         });
+      }
+    } else {
       toast({
-        title: "PDF Downloaded",
-        description: `Receipt for ${receipt.studentName} downloaded as PDF.`
-      });
-    } catch (error) {
-      console.error("Error downloading PDF from HTML:", error);
-      toast({
-        title: "Download Error",
-        description: "Could not generate PDF for download.",
+        title: "Preview Action Not Configured",
+        description: "HTML preview is disabled. DOCX download not set up for this action.",
         variant: "destructive"
       });
     }
   };
+  
+  // If focusing purely on DOCX, this dialog might be removed entirely,
+  // and "preview" actions directly trigger downloads.
+  // For now, let's assume it might still be used if a DOCX preview/download is triggered.
+
+  if (!isDocxPreview) {
+     // If not docx preview and HTML preview is removed, then this dialog shouldn't show.
+     // The AdminDashboard should control its `isOpen` state based on this.
+     // For now, let's keep a minimal structure for DOCX download button if used.
+     // If isOpen is true AND isDocxPreview is true, then this dialog is for DOCX download.
+  }
+
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
+    <Dialog open={isOpen && isDocxPreview} onOpenChange={onClose}> {/* Only open if DOCX preview mode */}
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
-            <span>Receipt Preview - {receipt.studentName} (HTML)</span>
-            <div className="flex items-center space-x-2">
-              <Button onClick={handleDownload} size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Download as PDF
-              </Button>
-              <Button variant="ghost" size="sm" onClick={onClose}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+            <span>Download Receipt for {receipt.studentName}</span>
+            <Button variant="ghost" size="sm" onClick={onClose} className="absolute right-4 top-4">
+              <X className="h-4 w-4" />
+            </Button>
           </DialogTitle>
         </DialogHeader>
         
-        <div className="border rounded-lg p-4 bg-white">
-          <div 
-            dangerouslySetInnerHTML={{ 
-              __html: generateReceiptHTML(receipt.context) 
-            }}
-            className="receipt-preview" // You might want to add specific styles for this class
-          />
+        <div className="border rounded-lg p-4 bg-white text-center">
+          <p className="mb-4">This will download the receipt as a DOCX file.</p>
+          <Button onClick={handleDownload} size="lg">
+            <Download className="h-4 w-4 mr-2" />
+            Download DOCX
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -1,378 +1,238 @@
-
+// src/components/StudentPortal.tsx
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+// import { Badge } from '@/components/ui/badge'; // Badge seems unused
 import { toast } from '@/hooks/use-toast';
-import { 
-  Download, 
-  FileText, 
-  CheckCircle, 
-  Clock, 
-  AlertCircle,
-  LogOut,
-  GraduationCap,
-  User,
-  Mail,
-  Calendar,
-  DollarSign
-} from 'lucide-react';
+import { Download, LogOut, GraduationCap } from 'lucide-react'; // Simplified imports
+import { supabase, supabaseStorageBucketName } from '@/supabaseClient';
+import { saveAs } from 'file-saver';
+import { Session, User as SupabaseUser } from '@supabase/supabase-js'; // Explicitly import User
 
-interface StudentData {
+interface FetchedReceipt {
+  id: number;
+  student_name: string;
+  student_year_course: string;
+  generated_at: string;
+  pdf_storage_path: string; // This is the docx_storage_path
+  student_fee_receipt_no: string;
+}
+
+interface UserProfileData {
   name: string;
   email: string;
-  rollNumber: string;
-  receipt?: {
-    id: number;
-    status: 'available' | 'generating' | 'not_available';
-    generatedAt?: string;
-    amount?: number;
-    semester?: string;
-    isDeleted: boolean;
-  };
+  // rollNumber: string; // Removed as it's not directly fetched/used this way
 }
 
 interface StudentPortalProps {
   onLogout: () => void;
-  studentEmail?: string;
+  studentEmail?: string; // Can be derived from session
+  session: Session | null;
 }
 
-const StudentPortal = ({ onLogout, studentEmail = 'student@university.edu' }: StudentPortalProps) => {
-  const [student, setStudent] = useState<StudentData>({
-    name: 'Student User',
-    email: studentEmail,
-    rollNumber: 'STU001',
-    receipt: {
-      id: 1,
-      status: 'not_available',
-      isDeleted: false
-    }
-  });
+const StudentPortal = ({ onLogout, session }: StudentPortalProps) => {
+  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
+  const [receipts, setReceipts] = useState<FetchedReceipt[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorState, setErrorState] = useState<string | null>(null); // For displaying errors
 
-  // Simulate fetching student data based on logged-in email
   useEffect(() => {
-    // In a real app, this would fetch from your backend/database
-    const fetchStudentData = () => {
-      // Check if there are any receipts generated for this student
-      const savedReceipts = localStorage.getItem('generatedReceipts');
-      if (savedReceipts) {
-        try {
-          const receipts = JSON.parse(savedReceipts);
-          const studentReceipt = receipts.find((r: any) => 
-            r.email.toLowerCase() === studentEmail.toLowerCase()
-          );
-          
-          if (studentReceipt) {
-            setStudent({
-              name: studentReceipt.studentName,
-              email: studentReceipt.email,
-              rollNumber: studentReceipt.rollNumber,
-              receipt: {
-                id: studentReceipt.id,
-                status: 'available',
-                generatedAt: studentReceipt.generatedAt,
-                amount: studentReceipt.amount || 5000,
-                semester: studentReceipt.semester || 'Current Semester',
-                isDeleted: false
-              }
-            });
+    const fetchStudentDataAndReceipts = async () => {
+      setIsLoading(true);
+      setErrorState(null); // Reset error state on new fetch attempt
+
+      const currentUser: SupabaseUser | undefined = session?.user;
+
+      if (!currentUser) {
+        setErrorState("No active session. Please log in.");
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        // Fetch user profile from public.users
+        console.log(`Fetching profile for user ID: ${currentUser.id}`);
+        const { data: profileData, error: profileError } = await supabase
+          .from('users')
+          .select('full_name, email')
+          .eq('id', currentUser.id)
+          .single(); // .single() will error if 0 or >1 rows.
+
+        if (profileError) {
+          // PGRST116 means "JSON object requested, multiple (or no) rows returned"
+          if (profileError.code === 'PGRST116') {
+            console.error(`Profile not found in public.users for ID: ${currentUser.id}`, profileError);
+            setErrorState(`Your user profile could not be found. Please contact support. (User ID: ${currentUser.id})`);
+          } else {
+            console.error('Error fetching student profile:', profileError);
+            setErrorState(`Error loading profile: ${profileError.message}`);
           }
-        } catch (error) {
-          console.error('Error parsing receipts:', error);
+          // Do not proceed if profile fetch failed
+          setIsLoading(false);
+          return;
         }
+
+        // If profileError was null, profileData should exist due to .single()
+        if (!profileData) { // Defensive check, should be caught by profileError
+            console.error(`Profile data is unexpectedly null for ID: ${currentUser.id}`);
+            setErrorState("Profile data is missing after successful fetch. Contact support.");
+            setIsLoading(false);
+            return;
+        }
+        
+        setUserProfile({
+            name: profileData.full_name || currentUser.email || 'Student User', // Fallback name
+            email: profileData.email || currentUser.email || 'No email found', // Fallback email
+        });
+        console.log("Profile data fetched:", profileData);
+
+        // Fetch receipts from generated_receipts
+        console.log(`Fetching receipts for user ID: ${currentUser.id}`);
+        const { data: receiptsData, error: receiptsError } = await supabase
+          .from('generated_receipts')
+          .select('id, student_name, student_year_course, generated_at, pdf_storage_path, student_fee_receipt_no') // Select specific columns
+          .eq('student_user_id', currentUser.id)
+          .order('generated_at', { ascending: false });
+
+        if (receiptsError) {
+          console.error('Error fetching receipts:', receiptsError);
+          // Don't set main errorState here if profile loaded, receipts can be empty or fail separately
+          toast({ title: "Receipts Error", description: `Could not load receipts: ${receiptsError.message}`, variant: "destructive" });
+          setReceipts([]); // Set to empty array on error
+        } else {
+          setReceipts(receiptsData || []);
+          console.log("Receipts data fetched:", receiptsData);
+        }
+
+      } catch (error: any) { // Catch any unexpected errors from the try block itself
+        console.error('Unexpected error in fetchStudentDataAndReceipts:', error);
+        setErrorState(`An unexpected error occurred: ${error.message}`);
+        // toast({ title: "Unexpected Error", description: "An unexpected error occurred while loading your data.", variant: "destructive" });
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    fetchStudentData();
-    
-    // Listen for storage changes (when admin generates new receipts)
-    const handleStorageChange = () => {
-      fetchStudentData();
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [studentEmail]);
+    if (session) { // Only fetch if session exists
+        fetchStudentDataAndReceipts();
+    } else {
+        setErrorState("No active session. Please log in.");
+        setIsLoading(false);
+    }
+  }, [session]); // Re-run effect when session changes
 
-  const handleDownloadReceipt = () => {
-    if (student.receipt?.status === 'available' && !student.receipt.isDeleted) {
-      toast({
-        title: "Download Started",
-        description: "Your fee receipt is being downloaded.",
-      });
-      
-      // Simulate PDF download
-      setTimeout(() => {
-        // Create a mock PDF download
-        const link = document.createElement('a');
-        link.href = '#'; // In real app, this would be the actual PDF URL
-        link.download = `receipt_${student.rollNumber}_${new Date().getTime()}.pdf`;
-        
-        toast({
-          title: "Download Complete",
-          description: "Receipt saved to your downloads folder.",
-        });
-      }, 1500);
+  const handleDownloadReceipt = async (receipt: FetchedReceipt) => {
+    if (!receipt.pdf_storage_path) {
+      toast({ title: "Error", description: "Receipt file path not found.", variant: "destructive" });
+      return;
+    }
+    try {
+      toast({ title: "Downloading...", description: "Your receipt is being downloaded." });
+      const { data: blob, error } = await supabase.storage
+        .from(supabaseStorageBucketName) // Ensure this is correctly imported and set
+        .download(receipt.pdf_storage_path);
+
+      if (error) {
+          console.error("Supabase storage download error:", error);
+          toast({ title: "Download Failed", description: `Could not download: ${error.message}. Check permissions or file path.`, variant: "destructive" });
+          return;
+      };
+      if (blob) {
+        saveAs(blob, `Receipt_${receipt.student_name.replace(/\s+/g, '_')}_${receipt.student_fee_receipt_no}.docx`);
+        toast({ title: "Download Complete", description: "Receipt saved." });
+      } else {
+        toast({ title: "Download Issue", description: "Downloaded file data is empty.", variant: "destructive" });
+      }
+    } catch (error: any) {
+      console.error('Error downloading receipt:', error);
+      toast({ title: "Download Failed", description: error.message, variant: "destructive" });
     }
   };
 
-  const handleRequestEmail = () => {
-    toast({
-      title: "Email Requested",
-      description: "A copy of your receipt will be sent to your email address.",
-    });
-  };
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center"><p>Loading student portal...</p></div>;
+  }
 
-  const getStatusBadge = () => {
-    const receipt = student.receipt;
-    
-    if (!receipt || receipt.isDeleted) {
-      return <Badge variant="destructive">Not Available</Badge>;
-    }
-    
-    switch (receipt.status) {
-      case 'available':
-        return <Badge variant="default" className="bg-green-600">Available</Badge>;
-      case 'generating':
-        return <Badge variant="secondary">Generating</Badge>;
-      case 'not_available':
-        return <Badge variant="destructive">Not Generated</Badge>;
-      default:
-        return <Badge variant="outline">Unknown</Badge>;
-    }
-  };
+  if (errorState) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <p className="text-red-600 mb-4">{errorState}</p>
+        <Button onClick={onLogout}>Logout and Try Again</Button>
+      </div>
+    );
+  }
 
-  const getStatusIcon = () => {
-    const receipt = student.receipt;
-    
-    if (!receipt || receipt.isDeleted) {
-      return <AlertCircle className="h-5 w-5 text-red-600" />;
-    }
-    
-    switch (receipt.status) {
-      case 'available':
-        return <CheckCircle className="h-5 w-5 text-green-600" />;
-      case 'generating':
-        return <Clock className="h-5 w-5 text-yellow-600" />;
-      case 'not_available':
-        return <AlertCircle className="h-5 w-5 text-red-600" />;
-      default:
-        return <AlertCircle className="h-5 w-5 text-gray-600" />;
-    }
-  };
-
-  const canDownload = student.receipt?.status === 'available' && !student.receipt.isDeleted;
+  if (!userProfile) {
+    // This case should ideally be covered by isLoading or errorState,
+    // but as a fallback:
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <p>Could not load student profile data. Please ensure your profile is set up correctly.</p>
+        <Button onClick={onLogout}>Logout</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="p-2 bg-green-600 rounded-lg">
-                <GraduationCap className="h-6 w-6 text-white" />
-              </div>
+              <div className="p-2 bg-green-600 rounded-lg"><GraduationCap className="h-6 w-6 text-white" /></div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Student Portal</h1>
-                <p className="text-sm text-gray-500">Fee Receipt Access</p>
+                <p className="text-sm text-gray-500">Welcome, {userProfile.name}</p>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <Badge variant="secondary" className="bg-green-100 text-green-800">
-                Student
-              </Badge>
-              <Button variant="outline" onClick={onLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
-            </div>
+            <Button variant="outline" onClick={onLogout}><LogOut className="h-4 w-4 mr-2" />Logout</Button>
           </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Welcome, {student.name}
-          </h2>
-          <p className="text-gray-600">
-            Access and download your fee receipts from this secure portal.
-          </p>
-        </div>
+        <Card className="mb-6">
+          <CardHeader><CardTitle>My Profile</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <p><strong>Name:</strong> {userProfile.name}</p>
+            <p><strong>Email:</strong> {userProfile.email}</p>
+          </CardContent>
+        </Card>
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Student Information */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <User className="h-5 w-5" />
-                  <span>Student Information</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-3">
-                  <User className="h-4 w-4 text-gray-500" />
-                  <div>
-                    <p className="text-sm text-gray-500">Full Name</p>
-                    <p className="font-medium">{student.name}</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-3">
-                  <Mail className="h-4 w-4 text-gray-500" />
-                  <div>
-                    <p className="text-sm text-gray-500">Email</p>
-                    <p className="font-medium">{student.email}</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-3">
-                  <FileText className="h-4 w-4 text-gray-500" />
-                  <div>
-                    <p className="text-sm text-gray-500">Roll Number</p>
-                    <p className="font-medium">{student.rollNumber}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Receipt Section */}
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <FileText className="h-5 w-5" />
-                    <span>Fee Receipt</span>
-                  </div>
-                  {getStatusBadge()}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!student.receipt || student.receipt.isDeleted ? (
-                  <div className="text-center py-8">
-                    <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Receipt Not Available</h3>
-                    <p className="text-gray-600">
-                      No receipt has been generated for your account yet. 
-                      Please contact the administration office if you believe this is an error.
-                    </p>
-                  </div>
-                ) : student.receipt.status === 'generating' ? (
-                  <div className="text-center py-8">
-                    <Clock className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Receipt Being Generated</h3>
-                    <p className="text-gray-600">
-                      Your receipt is currently being processed. Please check back shortly.
-                    </p>
-                  </div>
-                ) : student.receipt.status === 'not_available' ? (
-                  <div className="text-center py-8">
-                    <AlertCircle className="h-12 w-12 text-gray-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No Receipt Available</h3>
-                    <p className="text-gray-600">
-                      No fee receipt has been generated for your account yet.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Receipt Details */}
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <div className="flex items-center space-x-2 mb-3">
-                        {getStatusIcon()}
-                        <h3 className="font-semibold text-green-900">Receipt Available</h3>
-                      </div>
-                      
-                      <div className="grid md:grid-cols-2 gap-4 text-sm">
-                        {student.receipt.generatedAt && (
-                          <div className="flex items-center space-x-2">
-                            <Calendar className="h-4 w-4 text-green-600" />
-                            <div>
-                              <span className="text-green-700">Generated: </span>
-                              <span className="font-medium">{student.receipt.generatedAt}</span>
-                            </div>
-                          </div>
-                        )}
-                        
-                        {student.receipt.amount && (
-                          <div className="flex items-center space-x-2">
-                            <DollarSign className="h-4 w-4 text-green-600" />
-                            <div>
-                              <span className="text-green-700">Amount: </span>
-                              <span className="font-medium">₹{student.receipt.amount}</span>
-                            </div>
-                          </div>
-                        )}
-                        
-                        {student.receipt.semester && (
-                          <div className="flex items-center space-x-2">
-                            <FileText className="h-4 w-4 text-green-600" />
-                            <div>
-                              <span className="text-green-700">Semester: </span>
-                              <span className="font-medium">{student.receipt.semester}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+        <Card>
+          <CardHeader><CardTitle>My Fee Receipts</CardTitle></CardHeader>
+          <CardContent>
+            {receipts.length === 0 ? (
+              <p>No receipts found for your account at this time.</p>
+            ) : (
+              <ul className="space-y-4">
+                {receipts.map((receipt) => (
+                  <li key={receipt.id} className="p-4 border rounded-md flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                    <div className="flex-grow">
+                      <p className="font-semibold">Receipt (PO No: {receipt.student_fee_receipt_no})</p>
+                      <p className="text-sm text-gray-600">Generated: {new Date(receipt.generated_at).toLocaleDateString()}</p>
+                      {receipt.student_year_course && <p className="text-sm text-gray-600">Course: {receipt.student_year_course}</p>}
                     </div>
-
-                    {/* Download Section */}
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <Button 
-                        onClick={handleDownloadReceipt}
-                        disabled={!canDownload}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        Download Receipt PDF
-                      </Button>
-                      
-                      <Button variant="outline" onClick={handleRequestEmail}>
-                        <Mail className="h-4 w-4 mr-2" />
-                        Request Email Copy
-                      </Button>
-                    </div>
-
-                    <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded">
-                      <strong>Note:</strong> Keep your receipt safe for your records. 
-                      If you encounter any issues with the download, please contact the administration office.
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Help Section */}
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="text-lg">Need Help?</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3 text-sm">
-                  <p><strong>Q:</strong> I can't download my receipt. What should I do?</p>
-                  <p className="text-gray-600 ml-4">
-                    Ensure you're using a supported browser and have a stable internet connection. 
-                    If the issue persists, contact the administration.
-                  </p>
-                  
-                  <p><strong>Q:</strong> My receipt shows incorrect information.</p>
-                  <p className="text-gray-600 ml-4">
-                    Please contact the administration office immediately to report any discrepancies.
-                  </p>
-                  
-                  <p><strong>Q:</strong> Can I get multiple copies of my receipt?</p>
-                  <p className="text-gray-600 ml-4">
-                    Yes, you can download your receipt multiple times or request an email copy.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+                    <Button 
+                      onClick={() => handleDownloadReceipt(receipt)} 
+                      disabled={!receipt.pdf_storage_path}
+                      className="w-full sm:w-auto"
+                    >
+                      <Download className="h-4 w-4 mr-2" /> Download DOCX
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+        
+        <Card className="mt-6">
+          <CardHeader><CardTitle className="text-lg">Need Help?</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600">If you have any questions or cannot find your receipt, please contact the administration office.</p>
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
