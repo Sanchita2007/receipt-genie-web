@@ -234,6 +234,10 @@ const StudentPortal = ({ onLogout, session }: StudentPortalProps) => {
           </CardContent>
         </Card>
       </main>
+      <footer className="mt-10 border-t pt-4 text-sm text-gray-500 text-center">
+      <p>Developed by <strong>Sanchita Jarare</strong> and <strong>Atharva Jagtap</strong> © 2025.</p>
+      </footer>
+
     </div>
   );
 };

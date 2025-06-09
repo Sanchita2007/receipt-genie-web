@@ -89,11 +89,6 @@ const Index = () => {
                 <p className="text-sm text-gray-500">Automated Receipt Management System</p>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" onClick={() => navigate('/about')}>
-                About
-              </Button>
-            </div>
           </div>
         </div>
       </header>
@@ -209,14 +204,10 @@ const Index = () => {
         </div>
 
         {/* Footer Info */}
-        <div className="mt-16 text-center">
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 max-w-2xl mx-auto">
-            <h3 className="font-semibold text-gray-900 mb-2">System Notes</h3>
-            <p className="text-gray-600 text-sm">
-              Utilizes Supabase for user authentication. Supports .docx templates and Excel/CSV data. Generates PDFs and enables automated email delivery.
-            </p>
-          </div>
-        </div>
+      <footer className="mt-10 border-t pt-4 text-sm text-gray-500 text-center">
+      <p>Developed by <strong>Sanchita Jarare</strong> and <strong>Atharva Jagtap</strong> © 2025.</p>
+      </footer>
+
       </main>
     </div>
   );
